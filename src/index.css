@@ -1,0 +1,186 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: #ffffff;
+  --foreground: #0f172a;
+  --primary: #8B5CF6;
+  --secondary: #EC4899;
+  --accent: #F0ABFC;
+  --muted: #f3f4f6;
+  --muted-foreground: #6b7280;
+  --input-background: #ffffff;
+  --button-text: #ffffff;
+  --icon-color: #6b7280;
+  --icon-hover: #2563eb;
+  --primary-alpha: rgba(139, 92, 246, 0.2);
+}
+
+.dark {
+  --background: #0f172a;
+  --foreground: #e2e8f0;
+  --primary: #8B5CF6;
+  --secondary: #EC4899;
+  --accent: #F0ABFC;
+  --muted: #1e293b;
+  --muted-foreground: #94a3b8;
+  --input-background: #1e293b;
+  --button-text: #ffffff;
+  --icon-color: #94a3b8;
+  --icon-hover: #3b82f6;
+  --primary-alpha: rgba(139, 92, 246, 0.2);
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+/* Global input styles */
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="number"],
+input[type="search"],
+input[type="tel"],
+input[type="url"],
+textarea,
+select {
+  color: var(--foreground) !important;
+  background-color: var(--background) !important;
+  border-color: var(--muted);
+}
+
+/* Placeholder styles */
+input::placeholder,
+textarea::placeholder {
+  color: var(--muted-foreground) !important;
+  opacity: 1;
+}
+
+/* Focus styles */
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: var(--primary) !important;
+  box-shadow: 0 0 0 2px var(--primary-alpha) !important;
+}
+
+/* Message bubbles */
+.message-bubble {
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.message-bubble:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+}
+
+/* Transitions */
+.transition-colors {
+  transition-property: background-color, border-color, color, fill, stroke;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+
+/* Markdown styles */
+.prose {
+  max-width: none !important;
+}
+
+.prose pre {
+  background-color: var(--muted) !important;
+  color: var(--foreground) !important;
+}
+
+.prose code {
+  background-color: var(--muted) !important;
+  color: var(--foreground) !important;
+  padding: 0.2em 0.4em;
+  border-radius: 0.25em;
+}
+
+.prose a {
+  color: var(--primary) !important;
+  text-decoration: underline;
+}
+
+.prose blockquote {
+  border-left-color: var(--muted) !important;
+  color: var(--muted-foreground) !important;
+}
+
+/* React DatePicker Styles */
+.react-datepicker-wrapper {
+  width: 100%;
+}
+
+.react-datepicker {
+  font-family: inherit !important;
+  border-color: var(--muted) !important;
+  background-color: var(--background) !important;
+}
+
+.react-datepicker__header {
+  background-color: var(--muted) !important;
+  border-bottom-color: var(--muted) !important;
+}
+
+.react-datepicker__current-month,
+.react-datepicker__day-name,
+.react-datepicker__day {
+  color: var(--foreground) !important;
+}
+
+.react-datepicker__day:hover {
+  background-color: var(--muted) !important;
+}
+
+.react-datepicker__day--selected {
+  background-color: var(--primary) !important;
+  color: var(--button-text) !important;
+}
+
+/* React Select Styles */
+.react-select__control {
+  background-color: var(--background) !important;
+  border-color: var(--muted) !important;
+}
+
+.react-select__single-value,
+.react-select__input {
+  color: var(--foreground) !important;
+}
+
+.react-select__menu {
+  background-color: var(--background) !important;
+  border-color: var(--muted) !important;
+}
+
+.react-select__option {
+  background-color: var(--background) !important;
+  color: var(--foreground) !important;
+}
+
+.react-select__option:hover {
+  background-color: var(--muted) !important;
+}
+
+.react-select__option--is-selected {
+  background-color: var(--primary) !important;
+  color: var(--button-text) !important;
+}
+
+/* Fix for React Select input text color */
+.react-select__input input {
+  color: var(--foreground) !important;
+}
+
+/* Fix for React Select placeholder color */
+.react-select__placeholder {
+  color: var(--muted-foreground) !important;
+}
