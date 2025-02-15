@@ -1,6 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 export default {
-  content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}'],
+  content: ['./index.html', './src/**/*.{js,ts,jsx,tsx}', './src/components/ChatMessage.tsx'],
   theme: {
     extend: {
       colors: {
@@ -15,6 +15,7 @@ export default {
         'button-text': 'var(--button-text)',
         'icon-color': 'var(--icon-color)',
         'icon-hover': 'var(--icon-hover)',
+        'temp-color': '#ff0000', // Temporary color
       },
     },
   },

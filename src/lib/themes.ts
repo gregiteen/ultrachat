@@ -5,17 +5,17 @@ export const DESIGNER_THEMES: Theme[] = [
     id: 'modern',
     name: 'Modern',
     colors: {
-      background: '#ffffff',
-      foreground: '#1a1a1a',
-      primary: '#8B5CF6', // Purple from logo
-      secondary: '#EC4899', // Pink from logo
-      accent: '#F0ABFC', // Lighter pink
-      muted: '#F3F4F6',
-      mutedForeground: '#6B7280',
-      inputBackground: '#ffffff',
-      buttonText: '#ffffff',
-      iconColor: '#8B5CF6',
-      iconHover: '#EC4899'
+      background: '#ff0000', // Bright Red
+      foreground: '#0000ff', // Bright Blue
+      primary: '#00ff00', // Bright Green
+      secondary: '#ffff00', // Bright Yellow
+      accent: '#ff00ff', // Bright Magenta
+      muted: '#00ffff',     // Bright Cyan
+      mutedForeground: '#ffffff', // White
+      inputBackground: '#000000', // Black
+      buttonText: '#000000', // Black
+      iconColor: '#ff0000',
+      iconHover: '#00ff00'
     },
   },
   {
@@ -108,6 +108,7 @@ export function generateCSSVariables(theme: Theme): string {
 }
 
 export function applyTheme(theme: Theme) {
+    console.log("Applying theme:", theme);
   // Remove any existing theme style tag
   const existingStyle = document.getElementById('theme-style');
   if (existingStyle) {
@@ -119,10 +120,6 @@ export function applyTheme(theme: Theme) {
   style.id = 'theme-style';
   style.textContent = generateCSSVariables(theme);
   document.head.appendChild(style);
-
-  // Update body background color
-  document.body.classList.add('theme-applied');
-  document.body.dataset.theme = theme.id; // Store theme id for removal
 }
 
 export function removeTheme() {
@@ -130,6 +127,4 @@ export function removeTheme() {
   if (existingStyle) {
     existingStyle.remove();
   }
-  document.body.classList.remove('theme-applied');
-  delete document.body.dataset.theme;
 }

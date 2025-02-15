@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { createBrowserRouter, RouterProvider } from 'react-router-dom';
+import { createBrowserRouter, RouterProvider, Route, Outlet } from 'react-router-dom';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import Auth from './pages/Auth';
 import Chat from './pages/Chat';
@@ -11,6 +11,8 @@ import { AppLayout } from './components/AppLayout';
 import { onAuthStateChange } from './lib/supabase';
 import { useAuthStore } from './store/auth';
 import { usePersonalizationStore } from './store/personalization';
+import { useSettingsStore } from './store/settings';
+import { applyTheme, removeTheme } from './lib/themes';
 
 const router = createBrowserRouter([
   {
@@ -46,28 +48,45 @@ const router = createBrowserRouter([
 ]);
 
 function App() {
-  const { user } = useAuthStore();
+  const { loading: authLoading, user } = useAuthStore();
   const { fetchPersonalInfo } = usePersonalizationStore();
+  const { settings } = useSettingsStore();
 
-  useEffect(() => {
-    const { unsubscribe } = onAuthStateChange(() => {});
+    useEffect(() => {
+        const { unsubscribe } = onAuthStateChange(() => {});
 
-    // Fetch user data after auth state is determined
-    if (user) {
-        fetchPersonalInfo();
-    }
+        // Fetch user data after auth state is determined
+        if (user) {
+            fetchPersonalInfo();
+        }
 
-    // Cleanup function to unsubscribe when the component unmounts
-    return () => {
-      unsubscribe();
-    };
-  }, [user, fetchPersonalInfo]);
+        // Cleanup function to unsubscribe when the component unmounts
+        return () => {
+            unsubscribe();
+        };
+    }, [user, fetchPersonalInfo]);
+
+    useEffect(() => {
+      if (settings?.theme) {
+        applyTheme(settings.theme);
+      }
+      return () => {
+        removeTheme();
+      }
+    }, [settings]);
+
+
+  if (authLoading) {
+    return null; // Or a loading spinner
+  }
 
   return (
     <ErrorBoundary>
-      <RouterProvider router={router} />
+      <div className="theme-applied">
+        <RouterProvider router={router} />
+      </div>
     </ErrorBoundary>
-  )
+  );
 }
 
 export default App;

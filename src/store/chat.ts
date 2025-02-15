@@ -63,10 +63,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
           .order('updated_at', { ascending: false })
 
       if (error) throw error;
-      console.log("Raw threads data:", data);
+      console.log("Fetch Threads - Raw Data:", data);
 
       // Handle potential null data
-      set({ threads: (data as any) || [] });
+      set({ threads: data || [] } as Partial<ChatState>);
 
     } catch (error) {
       console.error('Error fetching threads:', error);
@@ -93,7 +93,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (error) throw error;
 
       // Handle potential null data
-      set({ messages: (data as any) || [], currentThreadId: threadId });
+      set({ messages: data || [], currentThreadId: threadId } as Partial<ChatState>);
 
     } catch (error) {
       console.error('Error fetching messages:', error);
@@ -113,7 +113,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           ? { ...msg, content }
           : msg
       )
-    });
+    } as Partial<ChatState>);
   },
 
   sendMessage: async (content: string, files?: string[], contextId?: string) => {
@@ -139,7 +139,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
         if (threadError) throw threadError;
         threadId = thread!.id; // Use definite assignment assertion
-        set({ currentThreadId: threadId });
+        set({ currentThreadId: threadId } as Partial<ChatState>);
       }
 
       // Get context if provided
@@ -178,10 +178,42 @@ export const useChatStore = create<ChatState>((set, get) => ({
         .single() as PostgrestSingleResponse<Message>; // Explicit type
 
       if (userError) throw userError;
-      set({ messages: [...get().messages, userMessage!] }); // Add new message and use definite assignment
+      set({ messages: [...get().messages, userMessage!] } as Partial<ChatState>); // Add new message and use definite assignment
 
       // TODO: Handle AI response and streaming
         const model = getChatModel();
+
+        let fileContent = '';
+        if (files && files.length > 0) {
+            for (const filePath of files) {
+                try {
+                    const { data: fileData, error: fileError } = await supabase.storage.from('user-uploads').download(filePath);
+
+                    if (fileError) {
+                        console.error("Error downloading file:", fileError);
+                        continue; // Skip this file and continue with the next
+                    }
+                    if (!fileData) {
+                        console.error("File data is null:", filePath);
+                        continue;
+                    }
+
+                    const fileText = await fileData.text();
+
+                    // Basic file type check and content handling
+                    if (filePath.endsWith('.txt') || filePath.endsWith('.md') || filePath.endsWith('.csv') || filePath.endsWith('.json') || filePath.endsWith('.xml')) {
+                        fileContent += `\n\nContent of ${filePath}:\n${fileText.substring(0, 2000)}\n`;
+                    } else {
+                        fileContent += `\n\nUploaded file: ${filePath} (Type: ${fileData.type})\n`;
+                    }
+
+
+                }
+                catch (error) {
+                    console.error("Error processing file:", filePath, error);
+                }
+            }
+        }
 
         const chat = model.startChat({
             history: [
@@ -196,7 +228,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             ],
           });
           
-        const result = await chat.sendMessage(contextContent + content);
+        const result = await chat.sendMessage(contextContent + content + fileContent);
         const response = result.response.text();
         console.log(response);
 
@@ -214,7 +246,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         .single() as PostgrestSingleResponse<Message>;
 
         if (aiError) throw aiError;
-        set({ messages: [...get().messages, aiMessage!] });
+        set({ messages: [...get().messages, aiMessage!] } as Partial<ChatState>);
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'An error occurred';

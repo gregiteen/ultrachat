@@ -10,18 +10,21 @@ interface ChatMessageProps {
 
 export function ChatMessage({ message, isStreaming }: ChatMessageProps) {
   const isUser = message.role === 'user';
+  console.log("ChatMessage - isUser:", isUser, "content:", message.content);
 
   return (
     <div className={`flex gap-4 ${isUser ? 'justify-end' : 'justify-start'}`}>
       <div
-        className={`message-bubble flex max-w-[80%] rounded-lg px-4 py-3`}
-        style={
+        className={`message-bubble flex max-w-[80%] rounded-lg px-4 py-3 ${
           isUser
-            ? { backgroundColor: 'blue', color: 'white', borderRadius: '20px 4px 20px 20px' }
-            : { backgroundColor: 'yellow', color: 'black', borderRadius: '4px 20px 20px 20px' }
-        }
+            ? 'bg-primary text-button-text'
+            : 'bg-muted text-foreground'
+        }`}
+        style={{
+          borderRadius: isUser ? '20px 4px 20px 20px' : '4px 20px 20px 20px',
+        }}
       >
-        <div className="prose prose-sm dark:prose-invert max-w-none">
+        <div>
           {isStreaming ? (
             <div className="flex items-center gap-1">
               <div className="h-2 w-2 rounded-full bg-current animate-pulse" />
@@ -31,7 +34,7 @@ export function ChatMessage({ message, isStreaming }: ChatMessageProps) {
           ) : (
             <ReactMarkdown
               remarkPlugins={[remarkGfm]}
-              className="whitespace-pre-wrap text-[15px] leading-relaxed"
+              className="whitespace-pre-wrap text-base leading-relaxed"
             >
               {message.content}
             </ReactMarkdown>
