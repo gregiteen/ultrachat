@@ -1,39 +1,68 @@
-import React, { useCallback } from 'react';
+import React, { useCallback, useState, useRef } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { Upload, X } from 'lucide-react';
-import { isSupportedFileType } from '../lib/gemini';
+import { Upload, X, CheckCircle, AlertTriangle } from 'lucide-react';
+// import { isSupportedFileType } from '../lib/gemini';
+import { supabase } from '../lib/supabase';
 
 interface FileUploaderProps {
-  onFilesSelected: (files: File[]) => void;
-  selectedFiles: File[];
-  onRemoveFile: (index: number) => void;
+  onChange: (paths: string[]) => void;
   maxFiles?: number;
   maxSize?: number;
 }
 
 export function FileUploader({
-  onFilesSelected,
-  selectedFiles,
-  onRemoveFile,
-  maxFiles = 10,
+  onChange,
+  maxFiles = 5,
   maxSize = 4 * 1024 * 1024 // 4MB default
 }: FileUploaderProps) {
-  const onDrop = useCallback((acceptedFiles: File[]) => {
-    const validFiles = acceptedFiles.filter(file => 
-      isSupportedFileType(file.type) && file.size <= maxSize
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [uploadedFiles, setUploadedFiles] = useState<string[]>([]);
+    const fileInputRef = useRef<HTMLInputElement>(null);
+
+
+  const onDrop = useCallback(async (acceptedFiles: File[]) => {
+    setUploadError(null);
+
+    const validFiles = acceptedFiles.filter(file =>
+      file.size <= maxSize //isSupportedFileType(file.type) && 
     );
     
-    if (validFiles.length + selectedFiles.length > maxFiles) {
-      alert(`Maximum ${maxFiles} files allowed`);
+    if (validFiles.length + uploadedFiles.length > maxFiles) {
+      setUploadError(`You can only upload a maximum of ${maxFiles} files.`);
       return;
     }
-    
-    onFilesSelected(validFiles);
-  }, [maxFiles, maxSize, onFilesSelected, selectedFiles.length]);
+
+    const uploadPromises = validFiles.map(async (file) => {
+      const filePath = `${Date.now()}-${file.name}`;
+      const { error: uploadError } = await supabase.storage
+        .from('user-uploads')
+        .upload(filePath, file);
+
+        // TODO: Implement progress tracking if needed.
+
+      if (uploadError) {
+        console.error('Upload error:', uploadError);
+        setUploadError(`Failed to upload ${file.name}: ${uploadError.message}`);
+        return null;
+      }
+
+      return filePath;
+    });
+
+
+    Promise.all(uploadPromises).then((results) => {
+        const successfulUploads = results.filter((result): result is string => result !== null);
+        const allFiles = [...uploadedFiles, ...successfulUploads];
+        onChange(allFiles);
+        setUploadedFiles(allFiles);
+    });
+
+
+  }, [maxFiles, maxSize, onChange, uploadedFiles, setUploadedFiles]);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({
     onDrop,
-    maxFiles: maxFiles - selectedFiles.length,
+    maxFiles: maxFiles - uploadedFiles.length,
     maxSize,
     accept: {
       'image/*': ['.jpg', '.jpeg', '.png', '.gif', '.webp'],
@@ -43,16 +72,38 @@ export function FileUploader({
       'video/*': ['.mp4', '.webm']
     }
   });
+    
+    const openFileSelector = () => {
+        if (fileInputRef.current) {
+            fileInputRef.current.click();
+        }
+    };
+
 
   return (
     <div className="space-y-4">
+        <input
+            type="file"
+            ref={fileInputRef}
+            style={{ display: 'none' }}
+            multiple
+            accept="image/*, .pdf, .txt, .md, .csv, .json, .xml, audio/*, video/*"
+            onChange={(e) => {
+                if (e.target.files) {
+                    onDrop(Array.from(e.target.files));
+                }
+            }}
+
+            capture="environment"
+        />
       <div
         {...getRootProps()}
         className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors
-          ${isDragActive 
-            ? 'border-blue-500 bg-blue-50' 
+          ${isDragActive
+            ? 'border-blue-500 bg-blue-50'
             : 'border-gray-300 hover:border-gray-400'
           }`}
+          onClick={openFileSelector}
       >
         <input {...getInputProps()} />
         <Upload className="mx-auto h-12 w-12 text-gray-400" />
@@ -66,27 +117,34 @@ export function FileUploader({
         </p>
       </div>
 
-      {selectedFiles.length > 0 && (
+      {uploadError && (
+        <div className="text-red-500 text-sm">
+          <AlertTriangle className="inline-block h-4 w-4 mr-1" />
+          {uploadError}
+        </div>
+      )}
+
+      {uploadedFiles.length > 0 && (
         <ul className="space-y-2">
-          {selectedFiles.map((file, index) => (
-            <li
-              key={index}
-              className="flex items-center justify-between p-2 bg-gray-50 rounded-md"
-            >
-              <div className="flex items-center space-x-2">
-                <span className="text-sm text-gray-600">{file.name}</span>
-                <span className="text-xs text-gray-400">
-                  ({Math.round(file.size / 1024)}KB)
-                </span>
-              </div>
-              <button
-                onClick={() => onRemoveFile(index)}
-                className="text-gray-400 hover:text-red-500"
+          {uploadedFiles.map((filePath) => {
+            const filename = filePath.split('/').pop()!;
+            return (
+              <li
+                key={filename}
+                className="flex items-center justify-between p-2 bg-gray-50 rounded-md"
               >
-                <X className="h-4 w-4" />
-              </button>
-            </li>
-          ))}
+                <div className="flex items-center space-x-2">
+                  <span className="text-sm text-gray-600">{filename}</span>
+                  <CheckCircle className='h-4 w-4 text-green-500' />
+                </div>
+                <button
+                  className="text-gray-400 hover:text-red-500"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </li>
+            );
+          })}
         </ul>
       )}
     </div>

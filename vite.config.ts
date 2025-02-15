@@ -7,12 +7,12 @@ export default defineConfig({
     include: ['react-select', 'react-datepicker'],
   },
   server: {
-    port: 5173,
+    port: 8081,
     host: true,
     strictPort: true,
   },
   preview: {
-    port: 5173,
+    port: 8081,
     host: true,
     strictPort: true,
   },

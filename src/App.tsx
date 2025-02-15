@@ -1,133 +1,73 @@
 import React, { useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { useAuthStore } from './store/auth';
-import { useSettingsStore } from './store/settings';
-import { supabase } from './lib/supabase';
-import { applyTheme } from './lib/themes';
+import { createBrowserRouter, RouterProvider } from 'react-router-dom';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import Auth from './pages/Auth';
+import Chat from './pages/Chat';
+import Account from './pages/Account';
+import Landing from './pages/Landing';
+import Tasks from './pages/Tasks';
+import UnifiedInbox from './pages/UnifiedInbox';
 import { AppLayout } from './components/AppLayout';
+import { onAuthStateChange } from './lib/supabase';
+import { useAuthStore } from './store/auth';
+import { usePersonalizationStore } from './store/personalization';
 
-// Lazy load components
-const Landing = React.lazy(() => import('./pages/Landing'));
-const Auth = React.lazy(() => import('./pages/Auth'));
-const Chat = React.lazy(() => import('./pages/Chat'));
-const UnifiedInbox = React.lazy(() => import('./pages/UnifiedInbox'));
-const Tasks = React.lazy(() => import('./pages/Tasks'));
-const Account = React.lazy(() => import('./pages/Account'));
+const router = createBrowserRouter([
+  {
+    path: '/',
+    element: <AppLayout />,
+    children: [
+      {
+        path: '', // Empty path for the root within AppLayout (Landing page)
+        element: <Landing />,
+      },
+      {
+        path: 'chat',
+        element: <Chat />,
+      },
+      {
+        path: 'account',
+        element: <Account />,
+      },
+      {
+        path: 'tasks',
+        element: <Tasks />,
+      },
+      {
+        path: 'inbox',
+        element: <UnifiedInbox />,
+      },
+    ],
+  },
+  {
+    path: '/auth',
+    element: <Auth />,
+  },
+]);
 
 function App() {
-  const { user, setUser, loading } = useAuthStore();
-  const { settings, fetchSettings } = useSettingsStore();
+  const { user } = useAuthStore();
+  const { fetchPersonalInfo } = usePersonalizationStore();
 
   useEffect(() => {
-    // Check active sessions and sets the user
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
-    });
+    const { unsubscribe } = onAuthStateChange(() => {});
 
-    // Listen for changes on auth state
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-    });
-
-    return () => subscription.unsubscribe();
-  }, [setUser]);
-
-  useEffect(() => {
+    // Fetch user data after auth state is determined
     if (user) {
-      fetchSettings().catch(console.error);
+        fetchPersonalInfo();
     }
-  }, [user, fetchSettings]);
 
-  // Apply theme when settings change
-  useEffect(() => {
-    if (settings.theme) {
-      applyTheme(settings.theme);
-    }
-  }, [settings.theme]);
-
-  if (loading) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-gray-900" />
-      </div>
-    );
-  }
+    // Cleanup function to unsubscribe when the component unmounts
+    return () => {
+      unsubscribe();
+    };
+  }, [user, fetchPersonalInfo]);
 
   return (
     <ErrorBoundary>
-      <Router>
-        <React.Suspense
-          fallback={
-            <div className="flex h-screen items-center justify-center">
-              <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-gray-900" />
-            </div>
-          }
-        >
-          <Routes>
-            <Route
-              path="/"
-              element={user ? <Navigate to="/chat" replace /> : <Landing />}
-            />
-            <Route
-              path="/auth"
-              element={user ? <Navigate to="/chat" replace /> : <Auth />}
-            />
-            <Route
-              path="/chat"
-              element={
-                user ? (
-                  <AppLayout>
-                    <Chat />
-                  </AppLayout>
-                ) : (
-                  <Navigate to="/auth" replace />
-                )
-              }
-            />
-            <Route
-              path="/inbox"
-              element={
-                user ? (
-                  <AppLayout>
-                    <UnifiedInbox />
-                  </AppLayout>
-                ) : (
-                  <Navigate to="/auth" replace />
-                )
-              }
-            />
-            <Route
-              path="/tasks"
-              element={
-                user ? (
-                  <AppLayout>
-                    <Tasks />
-                  </AppLayout>
-                ) : (
-                  <Navigate to="/auth" replace />
-                )
-              }
-            />
-            <Route
-              path="/account"
-              element={
-                user ? (
-                  <AppLayout>
-                    <Account />
-                  </AppLayout>
-                ) : (
-                  <Navigate to="/auth" replace />
-                )
-              }
-            />
-          </Routes>
-        </React.Suspense>
-      </Router>
+      <RouterProvider router={router} />
     </ErrorBoundary>
-  );
+  )
 }
 
 export default App;

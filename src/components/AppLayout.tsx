@@ -1,13 +1,13 @@
 import React from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, Outlet } from 'react-router-dom';
 import { MessageSquare, Inbox, CheckSquare, Settings, LogOut } from 'lucide-react';
 import { useAuthStore } from '../store/auth';
 
 interface AppLayoutProps {
-  children: React.ReactNode;
+  // children: React.ReactNode; // Removing the children prop
 }
 
-export function AppLayout({ children }: AppLayoutProps) {
+export function AppLayout({  }: AppLayoutProps) { // No more children prop
   const { signOut } = useAuthStore();
   const location = useLocation();
 
@@ -92,7 +92,8 @@ export function AppLayout({ children }: AppLayoutProps) {
 
       {/* Main Content */}
       <main className="pt-16">
-        {children}
+        {/* @ts-ignore */}
+        <Outlet />
       </main>
     </div>
   );

@@ -7,7 +7,7 @@ interface GroupedThread {
   threads: Array<{
     id: string;
     title: string;
-    updatedAt: string;
+    updated_at: string;
   }>;
 }
 
@@ -24,7 +24,7 @@ export function ChatHistory() {
 
   // Group threads by date
   const groupedThreads = threads.reduce((groups: GroupedThread[], thread) => {
-    const date = parseISO(thread.updatedAt);
+    const date = parseISO(thread.updated_at);
     const existingGroup = groups.find(g => isSameDay(g.date, date));
 
     if (existingGroup) {
@@ -74,7 +74,11 @@ export function ChatHistory() {
                     {thread.title || 'New Conversation'}
                   </p>
                   <p className="text-xs text-muted-foreground mt-1">
-                    {format(parseISO(thread.updatedAt), 'h:mm a')}
+                    {thread.updated_at ? (
+                      format(parseISO(thread.updated_at), 'h:mm a')
+                    ) : (
+                      '--:-- --'
+                    )}
                   </p>
                 </button>
               ))}

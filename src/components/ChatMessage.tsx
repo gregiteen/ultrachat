@@ -2,7 +2,6 @@ import React from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import type { Message } from '../types';
-import { UserCircle2, Bot } from 'lucide-react';
 
 interface ChatMessageProps {
   message: Message;
@@ -14,13 +13,6 @@ export function ChatMessage({ message, isStreaming }: ChatMessageProps) {
 
   return (
     <div className={`flex gap-4 ${isUser ? 'justify-end' : 'justify-start'}`}>
-      <div className="flex-shrink-0">
-        {isUser ? (
-          <UserCircle2 className="h-8 w-8 text-primary" />
-        ) : (
-          <Bot className="h-8 w-8 text-secondary" />
-        )}
-      </div>
       <div
         className={`message-bubble flex max-w-[80%] rounded-lg px-4 py-3 ${
           isUser

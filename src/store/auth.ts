@@ -15,29 +15,45 @@ export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   loading: true,
   signIn: async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    if (error) throw error;
+    set({ loading: true });
+    try {
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+      if (error) throw error;
+    } finally {
+      set({ loading: false });
+    }
   },
   signUp: async (email: string, password: string) => {
-    const { error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        emailRedirectTo: window.location.origin,
-        data: {
-          email,
+    set({ loading: true });
+    try {
+      const { error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          emailRedirectTo: window.location.origin,
+          data: {
+            email,
+          },
         },
-      },
-    });
-    if (error) throw error;
+      });
+      if (error) throw error;
+    } finally {
+      set({ loading: false });
+    }
   },
   signOut: async () => {
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
-    set({ user: null });
+    set({ loading: true });
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) throw error;
+      set({ user: null });
+      window.location.href = '/auth'; // Redirect to auth page
+    } finally {
+      set({ loading: false });
+    }
   },
   setUser: (user) => set({ user, loading: false }),
 }));

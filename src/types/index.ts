@@ -1,38 +1,79 @@
-import { User as SupabaseUser } from '@supabase/supabase-js';
-
-export interface User {
-  id: string;
-  email: string;
-  created_at: string;
-  subscription_tier?: 'free' | 'pro' | 'enterprise';
-  subscription_status?: 'active' | 'canceled' | 'past_due';
-  subscription_period_end?: string;
+export interface PersonalInfo {
+  name?: string;
+  email?: string;
+  phone?: string;
+  address?: {
+    street?: string;
+    city?: string;
+    state?: string;
+    zip?: string;
+    country?: string;
+  };
+  job?: string;
+  company?: string;
+  mbti?: string;
+  backstory?: string;
+  projects?: string;
+  pets?: string[];
+  health_concerns?: string[];
+  height?: string;
+  weight?: string;
+  shoe_size?: string;
+  clothing_sizes?: {
+    top?: string;
+    bottom?: string;
+  };
+  goals?: string[];
+  dreams?: string[];
+  resume?: string;
+  hobbies?: string[];
+  family?: string[];
+  favorite_foods?: string[];
+  favorite_drinks?: string[];
+  friends?: string[];
+  love_interests?: string[];
+  cultural_groups?: string[];
+  religion?: string;
+  worldview?: string;
 }
 
 export interface Context {
   id: string;
   user_id: string;
   name: string;
+  ai_name: string;
   content: string;
+  voice: {
+    id?: string;
+    name: string;
+    description?: string;
+    settings?: {
+      stability: number;
+      similarity_boost: number;
+    };
+  };
   is_active: boolean;
   is_default?: boolean;
   created_at: string;
   updated_at: string;
-  files?: string[];
+  files?: string[]; // Array of file paths
   personal_info?: PersonalInfo;
   contacts?: Contact[];
   ai_personality?: AIPersonality;
   keywords?: ContextKeyword[];
+  personalization_document?: string;
   system_message?: string;
 }
 
 export interface Message {
   id: string;
   user_id: string;
+  thread_id: string;
   content: string;
   role: 'user' | 'assistant';
   context_id?: string;
   created_at: string;
+  files?: string[];
 }
 
 export interface Task {
@@ -144,41 +185,6 @@ export interface ApiUsage {
   usage_percentage: number;
 }
 
-export interface PersonalInfo {
-  name?: string;
-  email?: string;
-  phone?: string;
-  address?: {
-    street?: string;
-    city?: string;
-    state?: string;
-    zip?: string;
-    country?: string;
-  };
-  vehicles?: Array<{
-    make?: string;
-    model?: string;
-    year?: string;
-    licensePlate?: string;
-    insurance?: {
-      company?: string;
-      policyNumber?: string;
-    };
-  }>;
-  personalityTraits?: {
-    mbti?: string;
-    enneagram?: string;
-    bigFive?: {
-      openness?: number;
-      conscientiousness?: number;
-      extraversion?: number;
-      agreeableness?: number;
-      neuroticism?: number;
-    };
-    customTraits?: string[];
-  };
-}
-
 export interface Contact {
   id: string;
   name: string;
@@ -203,7 +209,6 @@ export interface AITrait {
 }
 
 export interface AIPersonality {
-  name: string;
   traits: AITrait[];
   customInstructions?: string;
 }
@@ -213,4 +218,18 @@ export interface ContextKeyword {
   prompt: string;
   description?: string;
   category?: string;
+}
+
+export interface User {
+    id: string;
+    email?: string;
+}
+
+export interface Thread {
+ id: string;
+ user_id: string;
+ title: string;
+ context_id: string | null;
+ created_at: string;
+ updated_at: string;
 }

@@ -16,6 +16,10 @@ interface ContextState {
   setDefaultContext: (context: Context | null) => Promise<void>;
 }
 
+interface UserSettings {
+  active_context_id: string | null;
+}
+
 export const useContextStore = create<ContextState>((set, get) => ({
   contexts: [],
   activeContext: null,
@@ -38,7 +42,7 @@ export const useContextStore = create<ContextState>((set, get) => ({
           .order('created_at', { ascending: false }),
         supabase
           .from('user_settings')
-          .select('settings->active_context_id')
+          .select('active_context_id')
           .eq('user_id', user.id)
           .single()
       ]);
@@ -46,7 +50,7 @@ export const useContextStore = create<ContextState>((set, get) => ({
       if (contextsResponse.error) throw contextsResponse.error;
       
       const contexts = contextsResponse.data || [];
-      const activeContextId = activeContextResponse.data?.settings?.active_context_id;
+      const activeContextId = activeContextResponse.data?.active_context_id;
       
       // Find active and default contexts
       const activeContext = contexts.find(c => c.id === activeContextId);
@@ -60,6 +64,42 @@ export const useContextStore = create<ContextState>((set, get) => ({
         activeContext: effectiveActiveContext,
         defaultContext: defaultContext || null
       });
+
+      // If no contexts exist, create the personalization context
+      if (contexts.length === 0) {
+        const { data: personalContext, error: createError } = await supabase
+          .from('contexts')
+          .insert([{
+            user_id: user.id,
+            name: 'Personalize',
+            ai_name: 'Personal Assistant',
+            content: 'I am your personal assistant, focused on understanding and supporting you through our conversations.',
+            voice: 'warm, friendly voice',
+            is_active: true,
+            is_default: true,
+            personalization_document: 'Your personalization document will be automatically generated and maintained as you provide information.'
+          }])
+          .select()
+          .single();
+
+        if (createError) throw createError;
+
+        if (personalContext) {
+          set(state => ({
+            contexts: [personalContext],
+            activeContext: personalContext,
+            defaultContext: personalContext
+          }));
+
+          // Set as active context in user settings
+          await supabase
+            .from('user_settings')
+            .upsert({
+              user_id: user.id,
+              active_context_id: personalContext.id
+            });
+        }
+      }
     } catch (error) {
       set({ error: error instanceof Error ? error.message : 'An error occurred' });
     } finally {
@@ -73,9 +113,6 @@ export const useContextStore = create<ContextState>((set, get) => ({
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
 
-      // If this is the first context, make it the default
-      const isFirst = get().contexts.length === 0;
-
       const { data, error } = await supabase
         .from('contexts')
         .insert([{
@@ -83,7 +120,6 @@ export const useContextStore = create<ContextState>((set, get) => ({
           content,
           user_id: user.id,
           files: files || [],
-          is_default: isFirst,
           is_active: true
         }])
         .select()
@@ -96,15 +132,12 @@ export const useContextStore = create<ContextState>((set, get) => ({
         .from('user_settings')
         .upsert({
           user_id: user.id,
-          settings: {
-            active_context_id: data.id
-          }
+          active_context_id: data.id
         });
 
       set((state) => ({
         contexts: [data, ...state.contexts],
-        activeContext: data,
-        defaultContext: isFirst ? data : state.defaultContext
+        activeContext: data
       }));
     } catch (error) {
       set({ error: error instanceof Error ? error.message : 'An error occurred' });
@@ -160,10 +193,14 @@ export const useContextStore = create<ContextState>((set, get) => ({
 
       // Delete files from storage if they exist
       if (context?.files?.length) {
-        const filePaths = context.files.map(fileName => `${user.id}/files/${fileName}`);
-        await supabase.storage
-          .from('context-files')
-          .remove(filePaths);
+        const filePaths = context.files.map((fileName: string) => `${user.id}/files/${fileName}`);
+        try {
+          await supabase.storage
+            .from('context-files')
+            .remove(filePaths);
+        } catch (error) {
+          console.error('Error deleting files:', error);
+        }
       }
 
       const { error } = await supabase
@@ -176,33 +213,32 @@ export const useContextStore = create<ContextState>((set, get) => ({
 
       set((state) => {
         const remainingContexts = state.contexts.filter((c) => c.id !== id);
-        const wasDefault = state.defaultContext?.id === id;
         const wasActive = state.activeContext?.id === id;
         
-        // If we deleted the active context, set the default or first available as active
+        // If we deleted the active context, set the first available as active
         const newActiveContext = wasActive ? (remainingContexts[0] || null) : state.activeContext;
-        const newDefaultContext = wasDefault ? (remainingContexts[0] || null) : state.defaultContext;
 
         // Update active context in user settings if needed
         if (wasActive && newActiveContext) {
-          supabase
-            .from('user_settings')
-            .upsert({
-              user_id: user.id,
-              settings: {
-                active_context_id: newActiveContext.id
-              }
-            })
-            .then(() => {
+          (async () => {
+            try {
+              await supabase
+                .from('user_settings')
+                .upsert({
+                  user_id: user.id,
+                  active_context_id: newActiveContext.id
+                });
               console.log('Active context updated in settings after deletion');
-            })
-            .catch(console.error);
+            } catch (error) {
+              console.error('Error updating active context:', error);
+            }
+          })();
         }
 
         return {
           contexts: remainingContexts,
           activeContext: newActiveContext,
-          defaultContext: newDefaultContext
+          defaultContext: null
         };
       });
     } catch (error) {
@@ -222,9 +258,7 @@ export const useContextStore = create<ContextState>((set, get) => ({
         .from('user_settings')
         .upsert({
           user_id: user.id,
-          settings: {
-            active_context_id: context?.id || null
-          }
+          active_context_id: context?.id || null
         });
 
       set({ activeContext: context });

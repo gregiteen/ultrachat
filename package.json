@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "postbuild": "find dist/assets -name 'index-*.js' -print0 | xargs -0 -I {} sh -c 'sed -i \"s|src=\\\"/assets/index-\\*\\\\.js\\\"|src=\\\"\\{}\\\"|g\" dist/index.html'",
     "lint": "eslint . --ext ts,tsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview"
   },

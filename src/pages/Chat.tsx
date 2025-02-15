@@ -1,20 +1,34 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
 import { useChatStore } from '../store/chat';
 import { useContextStore } from '../store/context';
+import { usePersonalizationStore } from '../store/personalization';
+import type { Context } from '../types';
 import { ChatMessage } from '../components/ChatMessage';
 import { ChatInput } from '../components/ChatInput';
 import { ChatHistory } from '../components/ChatHistory';
 import { Settings } from '../components/Settings';
+import { ContextSelector } from '../components/ContextSelector';
+import ContextEditor from '../components/ContextEditor';
+import { PersonalizationButton } from '../components/PersonalizationButton';
+import { PersonalizationWelcome } from '../components/PersonalizationWelcome';
 import { MessageSquare, AlertCircle, ChevronRight, ChevronLeft } from 'lucide-react';
 
 export default function Chat() {
+  const navigate = useNavigate();
   const { messages, loading, error, streamingMessageId, sendMessage, fetchMessages, fetchThreads, clearMessages } = useChatStore();
-  const { activeContext } = useContextStore();
+  const { contexts, activeContext, setActiveContext } = useContextStore();
+  const { isActive, hasSeenWelcome, togglePersonalization, setHasSeenWelcome } = usePersonalizationStore();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [showSettings, setShowSettings] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [showContextEditor, setShowContextEditor] = useState(false);
+  const [editingContext, setEditingContext] = useState<Context | null>(null);
+
+  const [isVoiceToVoiceMode, setIsVoiceToVoiceMode] = useState(false);
+  const [isVoiceToTextMode, setIsVoiceToTextMode] = useState(false);
 
   useEffect(() => {
     fetchThreads().catch(console.error);
@@ -24,26 +38,44 @@ export default function Chat() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
+  useEffect(() => {
+    console.log("Chat.tsx hasSeenWelcome:", hasSeenWelcome);
+  }, [hasSeenWelcome]);
+
   const handleNewChat = () => {
     clearMessages();
     setSendError(null);
   };
 
-  const handleSendMessage = async (content: string) => {
+  const handleSendMessage = async (content: string, files?: string[]) => {
     setSendError(null);
     try {
-      await sendMessage(content, activeContext?.id);
+      await sendMessage(content, files, activeContext?.id);
     } catch (error) {
-      const errorMessage = error instanceof Error 
-        ? error.message 
+      const errorMessage = error instanceof Error
+        ? error.message
         : 'An error occurred while sending your message. Please try again.';
       setSendError(errorMessage);
       console.error('Chat error:', error);
     }
   };
 
+  const handleEditContext = (context: Context) => {
+    setEditingContext(context);
+    setShowContextEditor(true);
+  };
+
+  const handleContextChange = (context: Context | null) => {
+    setActiveContext(context);
+    clearMessages();
+  };
+
+  const handlePersonalization = () => {
+    navigate('/account?tab=personalization');
+  };
+
   return (
-    <div className="flex h-screen bg-background">
+    <div className="flex flex-col h-[calc(100vh-4rem)] bg-background">
       {/* Chat History Drawer */}
       <div
         className={`fixed inset-y-0 left-0 transform ${
@@ -63,7 +95,7 @@ export default function Chat() {
       </div>
 
       {/* Main content */}
-      <div className="flex-1 flex flex-col pl-12">
+      <div className="flex-1 flex flex-col overflow-hidden">
         {/* Drawer toggle button */}
         <button
           onClick={() => setDrawerOpen(!drawerOpen)}
@@ -96,8 +128,8 @@ export default function Chat() {
           ) : (
             <div className="space-y-6">
               {messages.map((message) => (
-                <ChatMessage 
-                  key={message.id} 
+                <ChatMessage
+                  key={message.id}
                   message={message}
                   isStreaming={message.id === streamingMessageId}
                 />
@@ -107,15 +139,57 @@ export default function Chat() {
           )}
         </div>
 
-        {/* Input */}
-        <ChatInput
-          onSendMessage={handleSendMessage}
-          isLoading={loading}
-        />
+        {/* Context Selector and Input */}
+        <div className="p-6 space-y-4">
+          <ContextSelector
+            contexts={contexts}
+            activeContext={activeContext}
+            onContextChange={handleContextChange}
+            onEditContext={handleEditContext}
+          />
+
+          <div className="relative">
+            <div className="absolute left-2 top-1/2 -translate-y-1/2 z-10">
+              <PersonalizationButton
+                isActive={isActive}
+                onToggle={togglePersonalization}
+                onClick={handlePersonalization}
+              />
+            </div>
+            <div className="pl-12">
+              <ChatInput
+                onSendMessage={handleSendMessage}
+                isLoading={loading}
+                isVoiceToTextMode={isVoiceToTextMode}
+                setIsVoiceToTextMode={setIsVoiceToTextMode}
+                isVoiceToVoiceMode={isVoiceToVoiceMode}
+                setIsVoiceToVoiceMode={setIsVoiceToVoiceMode}
+              />
+            </div>
+          </div>
+        </div>
       </div>
+
+      {/* Context Editor Modal */}
+      {showContextEditor && (
+        <ContextEditor
+          initialContext={editingContext || undefined}
+          onClose={() => {
+            setShowContextEditor(false);
+            setEditingContext(null);
+          }}
+        />
+      )}
 
       {/* Settings Modal */}
       {showSettings && <Settings onClose={() => setShowSettings(false)} />}
+
+      {/* Welcome Dialog */}
+      {!hasSeenWelcome && (
+        <PersonalizationWelcome
+          onClose={() => setHasSeenWelcome(true)}
+        />
+      )}
 
       {/* Overlay for mobile */}
       {drawerOpen && (

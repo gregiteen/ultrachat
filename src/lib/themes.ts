@@ -121,6 +121,15 @@ export function applyTheme(theme: Theme) {
   document.head.appendChild(style);
 
   // Update body background color
-  document.body.style.backgroundColor = theme.colors.background;
-  document.body.style.color = theme.colors.foreground;
+  document.body.classList.add('theme-applied');
+  document.body.dataset.theme = theme.id; // Store theme id for removal
+}
+
+export function removeTheme() {
+  const existingStyle = document.getElementById('theme-style');
+  if (existingStyle) {
+    existingStyle.remove();
+  }
+  document.body.classList.remove('theme-applied');
+  delete document.body.dataset.theme;
 }

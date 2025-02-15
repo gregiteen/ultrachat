@@ -1,28 +1,36 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, CreditCard, Plug, Palette } from 'lucide-react';
+import { Settings, CreditCard, Plug, Palette, User } from 'lucide-react';
 import { AccountOverview } from '../components/account/AccountOverview';
 import { IntegrationsPanel } from '../components/account/IntegrationsPanel';
 import { SubscriptionPanel } from '../components/account/SubscriptionPanel';
 import { ThemePanel } from '../components/account/ThemePanel';
+import { PersonalizationPanel } from '../components/account/PersonalizationPanel';
 import { useSubscriptionStore } from '../store/subscription';
 import { useIntegrationsStore } from '../store/integrations';
+import { usePersonalizationStore } from '../store/personalization';
+import { useSearchParams } from 'react-router-dom';
 
 const TABS = [
   { id: 'overview', label: 'Overview', icon: Settings },
   { id: 'subscription', label: 'Subscription', icon: CreditCard },
   { id: 'integrations', label: 'Integrations', icon: Plug },
   { id: 'appearance', label: 'Appearance', icon: Palette },
+  { id: 'personalization', label: 'Personalization', icon: User },
 ];
 
 export default function Account() {
-  const [activeTab, setActiveTab] = useState('overview');
+  const [searchParams] = useSearchParams();
+  const initialTab = searchParams.get('tab') || 'overview';
+  const [activeTab, setActiveTab] = useState(initialTab);
   const { fetchSubscription } = useSubscriptionStore();
   const { fetchIntegrations } = useIntegrationsStore();
+  const { personalInfo, fetchPersonalInfo, updatePersonalInfo } = usePersonalizationStore();
 
   useEffect(() => {
     fetchSubscription();
     fetchIntegrations();
-  }, [fetchSubscription, fetchIntegrations]);
+    fetchPersonalInfo();
+  }, [fetchSubscription, fetchIntegrations, fetchPersonalInfo]);
 
   return (
     <div className="min-h-screen bg-gray-100">
@@ -58,6 +66,12 @@ export default function Account() {
             {activeTab === 'subscription' && <SubscriptionPanel />}
             {activeTab === 'integrations' && <IntegrationsPanel />}
             {activeTab === 'appearance' && <ThemePanel />}
+            {activeTab === 'personalization' && (
+              <PersonalizationPanel
+                personalInfo={personalInfo}
+                setPersonalInfo={updatePersonalInfo}
+              />
+            )}
           </div>
         </div>
       </div>

@@ -1,10 +1,14 @@
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Palette } from 'lucide-react';
 import { useSettingsStore } from '../../store/settings';
 import { ThemeSelector } from '../ThemeSelector';
-import { applyTheme } from '../../lib/themes';
+import { applyTheme, removeTheme } from '../../lib/themes';
 
 export function ThemePanel() {
+  useEffect(() => {
+    return () => removeTheme();
+  }, []);
+
   const { settings, updateSettings, addCustomTheme, deleteCustomTheme } = useSettingsStore();
 
   const handleThemeChange = async (theme: typeof settings.theme) => {
