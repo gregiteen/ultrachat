@@ -60,12 +60,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
           .from('threads')
           .select('*')
           .eq('user_id', user.id)
-          .order('updated_at', { ascending: false });
+          .order('updated_at', { ascending: false })
 
       if (error) throw error;
+      console.log("Raw threads data:", data);
 
       // Handle potential null data
-      set({ threads: data as Thread[] || [] });
+      set({ threads: (data as any) || [] });
 
     } catch (error) {
       console.error('Error fetching threads:', error);
@@ -85,12 +86,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
           .from('messages')
           .select('*')
           .eq('thread_id', threadId)
-          .order('created_at', { ascending: true });
+          .order('created_at', { ascending: true })
 
+        console.log("Fetch Messages - Raw Data:", data); // Log raw data
+        console.log("Fetch Messages - Error:", error); // Log error
       if (error) throw error;
 
       // Handle potential null data
-      set({ messages: data as Message[] || [], currentThreadId: threadId });
+      set({ messages: (data as any) || [], currentThreadId: threadId });
 
     } catch (error) {
       console.error('Error fetching messages:', error);
@@ -157,23 +160,61 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
 
       // Insert user message
+      const messageData = {
+        content,
+        role: 'user',
+        thread_id: threadId,
+        user_id: user.id,
+        context_id: contextId,
+        files: files || []
+      };
+
+      console.log('Sending message:', messageData); // Log the data being sent
+
       const { data: userMessage, error: userError } = await supabase
         .from('messages')
-        .insert({
-          content,
-          role: 'user',
-          thread_id: threadId,
-          user_id: user.id,
-          context_id: contextId,
-          files: files || []
-        })
-        .select()
+        .insert(messageData)
+        .select('*, files') // Explicitly select the 'files' column
         .single() as PostgrestSingleResponse<Message>; // Explicit type
 
       if (userError) throw userError;
       set({ messages: [...get().messages, userMessage!] }); // Add new message and use definite assignment
 
       // TODO: Handle AI response and streaming
+        const model = getChatModel();
+
+        const chat = model.startChat({
+            history: [
+              {
+                role: "user",
+                parts: [{ text: "hi"}],
+              },
+              {
+                role: "model",
+                parts: [{ text: "hello, how can i help?"}],
+              },
+            ],
+          });
+          
+        const result = await chat.sendMessage(contextContent + content);
+        const response = result.response.text();
+        console.log(response);
+
+        const { data: aiMessage, error: aiError } = await supabase
+        .from('messages')
+        .insert({
+          content: response,
+          role: 'assistant',
+          thread_id: threadId,
+          user_id: user.id,
+          context_id: contextId,
+          files: []
+        })
+        .select()
+        .single() as PostgrestSingleResponse<Message>;
+
+        if (aiError) throw aiError;
+        set({ messages: [...get().messages, aiMessage!] });
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'An error occurred';

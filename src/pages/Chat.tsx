@@ -14,6 +14,7 @@ import ContextEditor from '../components/ContextEditor';
 import { PersonalizationButton } from '../components/PersonalizationButton';
 import { PersonalizationWelcome } from '../components/PersonalizationWelcome';
 import { MessageSquare, AlertCircle, ChevronRight, ChevronLeft } from 'lucide-react';
+import { useSettingsStore } from '../store/settings';
 
 export default function Chat() {
   const navigate = useNavigate();
@@ -30,6 +31,22 @@ export default function Chat() {
   const [isVoiceToVoiceMode, setIsVoiceToVoiceMode] = useState(false);
   const [isVoiceToTextMode, setIsVoiceToTextMode] = useState(false);
 
+  const [isInitializing, setIsInitializing] = useState(true); // New state variable
+
+  const { settings } = useSettingsStore();
+
+  useEffect(() => {
+      if (settings?.theme) {
+          console.log("Current Theme:", settings.theme.name);
+          console.log("Background:", settings.theme.colors.background);
+          console.log("Foreground:", settings.theme.colors.foreground);
+          console.log("Muted:", settings.theme.colors.muted);
+          console.log("Muted Foreground:", settings.theme.colors.mutedForeground);
+          console.log("Primary:", settings.theme.colors.primary);
+          console.log("Button Text:", settings.theme.colors.buttonText);
+      }
+  }, [settings]);
+
   useEffect(() => {
     fetchThreads().catch(console.error);
   }, [fetchThreads]);
@@ -41,6 +58,13 @@ export default function Chat() {
   useEffect(() => {
     console.log("Chat.tsx hasSeenWelcome:", hasSeenWelcome);
   }, [hasSeenWelcome]);
+
+    useEffect(() => {
+        // Only set isInitializing to false when both auth and personalization data are loaded
+        if (!useAuthStore.getState().loading && hasSeenWelcome !== undefined) {
+            setIsInitializing(false);
+        }
+    }, [hasSeenWelcome, useAuthStore.getState().loading]);
 
   const handleNewChat = () => {
     clearMessages();
@@ -73,6 +97,14 @@ export default function Chat() {
   const handlePersonalization = () => {
     navigate('/account?tab=personalization');
   };
+
+    if (isInitializing) {
+        return (
+            <div className="flex justify-center items-center h-screen">
+                <div className="animate-spin h-12 w-12 border-4 border-primary border-t-transparent rounded-full" />
+            </div>
+        );
+    }
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] bg-background">
@@ -127,13 +159,16 @@ export default function Chat() {
             </div>
           ) : (
             <div className="space-y-6">
-              {messages.map((message) => (
-                <ChatMessage
-                  key={message.id}
-                  message={message}
-                  isStreaming={message.id === streamingMessageId}
-                />
-              ))}
+              {messages.map((message) => {
+                console.log("Rendering message:", message);
+                return (
+                  <ChatMessage
+                    key={message.id}
+                    message={message}
+                    isStreaming={message.id === streamingMessageId}
+                  />
+                );
+              })}
               <div ref={messagesEndRef} />
             </div>
           )}

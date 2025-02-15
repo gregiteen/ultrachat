@@ -14,14 +14,12 @@ export function ChatMessage({ message, isStreaming }: ChatMessageProps) {
   return (
     <div className={`flex gap-4 ${isUser ? 'justify-end' : 'justify-start'}`}>
       <div
-        className={`message-bubble flex max-w-[80%] rounded-lg px-4 py-3 ${
+        className={`message-bubble flex max-w-[80%] rounded-lg px-4 py-3`}
+        style={
           isUser
-            ? 'bg-primary text-button-text'
-            : 'bg-muted text-foreground'
-        }`}
-        style={{
-          borderRadius: isUser ? '20px 4px 20px 20px' : '4px 20px 20px 20px',
-        }}
+            ? { backgroundColor: 'blue', color: 'white', borderRadius: '20px 4px 20px 20px' }
+            : { backgroundColor: 'yellow', color: 'black', borderRadius: '4px 20px 20px 20px' }
+        }
       >
         <div className="prose prose-sm dark:prose-invert max-w-none">
           {isStreaming ? (

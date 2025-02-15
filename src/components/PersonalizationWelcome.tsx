@@ -26,7 +26,7 @@ export function PersonalizationWelcome({ onClose }: PersonalizationWelcomeProps)
   }, [onClose])
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
+    <div className="fixed inset-0 bg-gray-500 flex items-center justify-center p-4 z-50">
       <div className="bg-background rounded-lg w-full max-w-2xl shadow-xl">
         <div className="p-6 space-y-6">
           <div className="flex items-center gap-4">
