@@ -2,6 +2,7 @@ import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { PromptTemplate } from "@langchain/core/prompts";
 import { RunnableSequence } from "@langchain/core/runnables";
 import { JsonOutputParser } from "@langchain/core/output_parsers";
+import { CalendarExecutor } from "../executors/calendar";
 
 const calendarOutputSchema = {
   type: "object",
@@ -28,7 +29,7 @@ const calendarOutputSchema = {
   }
 };
 
-export function createCalendarChain(model: ChatGoogleGenerativeAI) {
+export function createCalendarChain(model: ChatGoogleGenerativeAI, executor: CalendarExecutor) {
   const calendarPrompt = PromptTemplate.fromTemplate(`
     Act as a calendar management assistant. Analyze the following request and:
     1. Determine the calendar action needed
@@ -47,14 +48,59 @@ export function createCalendarChain(model: ChatGoogleGenerativeAI) {
     calendarPrompt,
     model,
     new JsonOutputParser(),
-    async (output: any) => {
-      // TODO: Implement calendar integration
-      return {
-        success: true,
-        message: "Calendar functionality coming soon!",
-        action: output.action,
-        details: output.event || output.query_params
-      };
+    async (output) => {
+      try {
+        switch (output.action) {
+          case "create": {
+            const event = await executor.createEvent({
+              summary: output.event.title,
+              description: output.event.description,
+              start: {
+                dateTime: output.event.start_time,
+                timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+              },
+              end: {
+                dateTime: output.event.end_time,
+                timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+              },
+              attendees: output.event.attendees,
+            });
+            return {
+              success: true,
+              message: "Event created successfully",
+              event,
+            };
+          }
+          case "update": {
+            const event = await executor.updateEvent(output.event.id, {
+              summary: output.event.title,
+              description: output.event.description,
+              start: {
+                dateTime: output.event.start_time,
+                timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+              },
+              end: {
+                dateTime: output.event.end_time,
+                timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+              },
+              attendees: output.event.attendees,
+            });
+            return {
+              success: true,
+              message: "Event updated successfully",
+              event,
+            };
+          }
+          case "delete":
+            await executor.deleteEvent(output.event.id);
+            return { success: true, message: "Event deleted successfully" };
+          case "query":
+            const events = await executor.listEvents(output.query_params);
+            return { success: true, events };
+        }
+      } catch (error: any) {
+        return { success: false, error: error.message };
+      }
     }
   ]);
 }

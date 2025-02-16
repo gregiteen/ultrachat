@@ -1,6 +1,9 @@
 import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
 import type { Task } from '../types';
+import { TaskExecutor } from '../lib/agents/executors/task';
+import { createTaskChain } from '../lib/agents/chains/task';
+import { useGeminiStore } from './gemini';
 
 interface TaskState {
   tasks: Task[];
@@ -10,6 +13,12 @@ interface TaskState {
   createTask: (task: Partial<Task>) => Promise<void>;
   updateTask: (id: string, updates: Partial<Task>) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
+  getSubtasks: (parentId: string) => Promise<Task[]>;
+  filterTasks: (options: { status?: Task['status']; priority?: Task['priority'] }) => Task[];
+  processTaskRequest: (request: string) => Promise<{
+    success: boolean;
+    message: string;
+  }>;
 }
 
 export const useTaskStore = create<TaskState>((set, get) => ({
@@ -132,5 +141,47 @@ export const useTaskStore = create<TaskState>((set, get) => ({
     } finally {
       set({ loading: false });
     }
+  },
+
+  getSubtasks: async (parentId: string) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('User not authenticated');
+
+    const { data, error } = await supabase
+      .from('tasks')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('parent_id', parentId)
+      .order('created_at', { ascending: true });
+
+    if (error) throw error;
+    return data || [];
+  },
+
+  filterTasks: ({ status, priority }) => {
+    const state = get();
+    return state.tasks.filter(task => {
+      if (status && task.status !== status) return false;
+      if (priority && task.priority !== priority) return false;
+      return true;
+    });
+  },
+
+  processTaskRequest: async (request: string) => {
+    const executor = new TaskExecutor();
+    const model = useGeminiStore.getState().model;
+    if (!model) throw new Error('Gemini model not initialized');
+
+    const chain = createTaskChain(model, executor);
+    const result = await chain.invoke({ input: request });
+
+    if (result.error) {
+      return {
+        success: false,
+        message: `Failed to process task: ${result.error}`,
+      };
+    }
+
+    return { success: true, message: result.response };
   },
 }));

@@ -1,11 +1,10 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
-import { useChatStore } from '../store/chat';
+import { useMessageStore, useThreadStore } from '../store/chat';
 import { useContextStore } from '../store/context';
 import { usePersonalizationStore } from '../store/personalization';
 import type { Context } from '../types';
-import { ChatMessage } from '../components/ChatMessage';
 import { ChatInput } from '../components/ChatInput';
 import { ChatHistory } from '../components/ChatHistory';
 import { Settings } from '../components/Settings';
@@ -15,14 +14,15 @@ import { PersonalizationButton } from '../components/PersonalizationButton';
 import { PersonalizationWelcome } from '../components/PersonalizationWelcome';
 import { MessageSquare, AlertCircle, ChevronRight, ChevronLeft } from 'lucide-react';
 import { useSettingsStore } from '../store/settings';
+import { VirtualizedChatHistory } from '../components/VirtualizedChatHistory';
 
 export default function Chat() {
   const navigate = useNavigate();
-  const { messages, loading, error, streamingMessageId, sendMessage, fetchMessages, fetchThreads, clearMessages } = useChatStore();
+  const { loading: messageLoading, error: messageError, sendMessage, clearThreadMessages } = useMessageStore();
+  const { fetchThreads } = useThreadStore();
   const { contexts, activeContext, setActiveContext } = useContextStore();
   const { loading: authLoading } = useAuthStore();
-  const { isActive, hasSeenWelcome, togglePersonalization, setHasSeenWelcome } = usePersonalizationStore();
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const { isActive, hasSeenWelcome, togglePersonalization } = usePersonalizationStore();
   const [showSettings, setShowSettings] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -32,20 +32,20 @@ export default function Chat() {
   const [isVoiceToVoiceMode, setIsVoiceToVoiceMode] = useState(false);
   const [isVoiceToTextMode, setIsVoiceToTextMode] = useState(false);
 
-  const [isInitializing, setIsInitializing] = useState(true); // New state variable
+  const [isInitializing, setIsInitializing] = useState(true);
 
   const { settings } = useSettingsStore();
 
   useEffect(() => {
-      if (settings?.theme) {
-          console.log("Current Theme:", settings.theme.name);
-          console.log("Background:", settings.theme.colors.background);
-          console.log("Foreground:", settings.theme.colors.foreground);
-          console.log("Muted:", settings.theme.colors.muted);
-          console.log("Muted Foreground:", settings.theme.colors.mutedForeground);
-          console.log("Primary:", settings.theme.colors.primary);
-          console.log("Button Text:", settings.theme.colors.buttonText);
-      }
+    if (settings?.theme) {
+      console.log("Current Theme:", settings.theme.name);
+      console.log("Background:", settings.theme.colors.background);
+      console.log("Foreground:", settings.theme.colors.foreground);
+      console.log("Muted:", settings.theme.colors.muted);
+      console.log("Muted Foreground:", settings.theme.colors.mutedForeground);
+      console.log("Primary:", settings.theme.colors.primary);
+      console.log("Button Text:", settings.theme.colors.buttonText);
+    }
   }, [settings]);
 
   useEffect(() => {
@@ -53,22 +53,20 @@ export default function Chat() {
   }, [fetchThreads]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  useEffect(() => {
     console.log("Chat.tsx hasSeenWelcome:", hasSeenWelcome);
   }, [hasSeenWelcome]);
 
-    useEffect(() => {
-        // Only set isInitializing to false when both auth and personalization data are loaded
-        if (!authLoading && hasSeenWelcome !== undefined) {
-            setIsInitializing(false);
-        }
-    }, [hasSeenWelcome, authLoading]);
+  useEffect(() => {
+    if (!authLoading && hasSeenWelcome !== undefined) {
+      setIsInitializing(false);
+    }
+  }, [hasSeenWelcome, authLoading]);
 
   const handleNewChat = () => {
-    clearMessages();
+    const currentThreadId = useThreadStore.getState().currentThreadId;
+    if (currentThreadId) {
+      clearThreadMessages(currentThreadId);
+    }
     setSendError(null);
   };
 
@@ -92,20 +90,23 @@ export default function Chat() {
 
   const handleContextChange = (context: Context | null) => {
     setActiveContext(context);
-    clearMessages();
+    const currentThreadId = useThreadStore.getState().currentThreadId;
+    if (currentThreadId) {
+      clearThreadMessages(currentThreadId);
+    }
   };
 
   const handlePersonalization = () => {
     navigate('/account?tab=personalization');
   };
 
-    if (isInitializing) {
-        return (
-            <div className="flex justify-center items-center h-screen">
-                <div className="animate-spin h-12 w-12 border-4 border-primary border-t-transparent rounded-full" />
-            </div>
-        );
-    }
+  if (isInitializing) {
+    return (
+      <div className="flex justify-center items-center h-screen">
+        <div className="animate-spin h-12 w-12 border-4 border-primary border-t-transparent rounded-full" />
+      </div>
+    );
+  }
 
   return (
     <div className="flex flex-col h-[calc(100vh-4rem)] bg-background">
@@ -143,36 +144,16 @@ export default function Chat() {
         </button>
 
         {/* Error display */}
-        {(error || sendError) && (
+        {(messageError || sendError) && (
           <div className="mx-4 mt-4 p-4 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-600">
             <AlertCircle className="h-5 w-5 flex-shrink-0" />
-            <p>{error || sendError}</p>
+            <p>{messageError || sendError}</p>
           </div>
         )}
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-6">
-          {messages.length === 0 ? (
-            <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
-              <MessageSquare className="h-12 w-12 mb-4" />
-              <p className="text-lg font-medium">Start a new conversation</p>
-              <p className="text-sm">Type a message to begin chatting</p>
-            </div>
-          ) : (
-            <div className="space-y-6">
-              {messages.map((message) => {
-                console.log("Rendering message:", message);
-                return (
-                  <ChatMessage
-                    key={message.id}
-                    message={message}
-                    isStreaming={message.id === streamingMessageId}
-                  />
-                );
-              })}
-              <div ref={messagesEndRef} />
-            </div>
-          )}
+        <div className="flex-1 overflow-hidden">
+          <VirtualizedChatHistory />
         </div>
 
         {/* Context Selector and Input */}
@@ -195,7 +176,7 @@ export default function Chat() {
             <div className="pl-12">
               <ChatInput
                 onSendMessage={handleSendMessage}
-                isLoading={loading}
+                isLoading={messageLoading}
                 isVoiceToTextMode={isVoiceToTextMode}
                 setIsVoiceToTextMode={setIsVoiceToTextMode}
                 isVoiceToVoiceMode={isVoiceToVoiceMode}
@@ -224,8 +205,6 @@ export default function Chat() {
       {!hasSeenWelcome && !isInitializing && (
         <PersonalizationWelcome
           onClose={() => {
-            // The PersonalizationWelcome component now handles the database update
-            // We just need to handle any UI cleanup here
             if (sendError === 'Failed to save personalization preference. Please try again.') {
               setSendError(null);
             }

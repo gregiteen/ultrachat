@@ -1,7 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { format, isToday, isYesterday, isSameDay, parseISO } from 'date-fns';
 import { Search, X, MoreVertical, Pin, Trash2, Edit2 } from 'lucide-react';
-import { useChatStore } from '../store/chat';
+import { useThreadStore } from '../store/chat';
+import { Virtuoso } from 'react-virtuoso';
 
 interface GroupedThread {
   date: Date;
@@ -44,7 +45,7 @@ interface ThreadActionsProps {
 }
 
 function ThreadActions({ thread, onClose }: ThreadActionsProps) {
-  const { renameThread, deleteThread, togglePinThread } = useChatStore();
+  const { renameThread, deleteThread, togglePinThread } = useThreadStore();
   const [isRenaming, setIsRenaming] = useState(false);
   const [newTitle, setNewTitle] = useState(thread.title);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -149,7 +150,7 @@ function ThreadActions({ thread, onClose }: ThreadActionsProps) {
 }
 
 export function ChatHistory() {
-  const { threads, loading, switchThread, currentThreadId } = useChatStore();
+  const { threads, loading, switchThread, currentThreadId } = useThreadStore();
   const [searchTerm, setSearchTerm] = useState('');
   const [activeThreadMenu, setActiveThreadMenu] = useState<string | null>(null);
 
@@ -161,6 +162,30 @@ export function ChatHistory() {
     );
   }, [threads, searchTerm]);
 
+  const groupedThreads = useMemo(() => {
+    return filteredThreads.reduce((groups: GroupedThread[], thread) => {
+      const date = parseISO(thread.updated_at);
+      const existingGroup = groups.find(g => isSameDay(g.date, date));
+
+      if (existingGroup) {
+        existingGroup.threads.push(thread);
+      } else {
+        groups.push({
+          date,
+          threads: [thread]
+        });
+      }
+
+      return groups;
+    }, []).sort((a, b) => b.date.getTime() - a.date.getTime());
+  }, [filteredThreads]);
+
+  const formatDate = useCallback((date: Date) => {
+    if (isToday(date)) return 'Today';
+    if (isYesterday(date)) return 'Yesterday';
+    return format(date, 'EEEE, MMMM d, yyyy');
+  }, []);
+
   if (loading) {
     return (
       <div className="flex justify-center p-4">
@@ -169,30 +194,65 @@ export function ChatHistory() {
     );
   }
 
-  // Group threads by date
-  const groupedThreads = filteredThreads.reduce((groups: GroupedThread[], thread) => {
-    const date = parseISO(thread.updated_at);
-    const existingGroup = groups.find(g => isSameDay(g.date, date));
-
-    if (existingGroup) {
-      existingGroup.threads.push(thread);
-    } else {
-      groups.push({
-        date,
-        threads: [thread]
-      });
-    }
-
-    return groups;
-  }, []);
-
-  // Sort groups by date (newest first)
-  groupedThreads.sort((a, b) => b.date.getTime() - a.date.getTime());
-
-  const formatDate = (date: Date) => {
-    if (isToday(date)) return 'Today';
-    if (isYesterday(date)) return 'Yesterday';
-    return format(date, 'EEEE, MMMM d, yyyy');
+  const renderThread = (index: number) => {
+    const group = groupedThreads[index];
+    return (
+      <div key={group.date.toISOString()}>
+        <div className="sticky top-0 bg-background/95 backdrop-blur-sm border-b border-muted px-4 py-2">
+          <h3 className="text-sm font-medium text-muted-foreground">
+            {formatDate(group.date)}
+          </h3>
+        </div>
+        <div className="divide-y divide-muted">
+          {group.threads.map((thread) => (
+            <div
+              key={thread.id}
+              className={`relative flex items-center justify-between px-4 py-3 hover:bg-muted transition-colors ${
+                currentThreadId === thread.id ? 'bg-muted' : ''
+              }`}
+            >
+              <button
+                onClick={() => switchThread(thread.id)}
+                className="flex-1 text-left"
+              >
+                <div className="flex items-center space-x-2">
+                  {thread.pinned && (
+                    <Pin className="h-3 w-3 text-primary" />
+                  )}
+                  <p className="text-sm text-foreground font-medium line-clamp-1">
+                    <HighlightedText 
+                      text={thread.title || 'New Conversation'} 
+                      highlight={searchTerm}
+                    />
+                  </p>
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">
+                  {thread.updated_at ? (
+                    format(parseISO(thread.updated_at), 'h:mm a')
+                  ) : (
+                    '--:-- --'
+                  )}
+                </p>
+              </button>
+              <div className="relative">
+                <button
+                  onClick={() => setActiveThreadMenu(activeThreadMenu === thread.id ? null : thread.id)}
+                  className="p-1 rounded hover:bg-muted-foreground/10"
+                >
+                  <MoreVertical className="h-4 w-4 text-muted-foreground" />
+                </button>
+                {activeThreadMenu === thread.id && (
+                  <ThreadActions
+                    thread={thread}
+                    onClose={() => setActiveThreadMenu(null)}
+                  />
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
   };
 
   return (
@@ -218,65 +278,15 @@ export function ChatHistory() {
           )}
         </div>
       </div>
-      <div className="flex-1 overflow-y-auto">
-        {groupedThreads.map(group => (
-          <div key={group.date.toISOString()}>
-            <div className="sticky top-0 bg-background/95 backdrop-blur-sm border-b border-muted px-4 py-2">
-              <h3 className="text-sm font-medium text-muted-foreground">
-                {formatDate(group.date)}
-              </h3>
-            </div>
-            <div className="divide-y divide-muted">
-              {group.threads.map((thread) => (
-                <div
-                  key={thread.id}
-                  className={`relative flex items-center justify-between px-4 py-3 hover:bg-muted transition-colors ${
-                    currentThreadId === thread.id ? 'bg-muted' : ''
-                  }`}
-                >
-                  <button
-                    onClick={() => switchThread(thread.id)}
-                    className="flex-1 text-left"
-                  >
-                    <div className="flex items-center space-x-2">
-                      {thread.pinned && (
-                        <Pin className="h-3 w-3 text-primary" />
-                      )}
-                      <p className="text-sm text-foreground font-medium line-clamp-1">
-                        <HighlightedText 
-                          text={thread.title || 'New Conversation'} 
-                          highlight={searchTerm}
-                        />
-                      </p>
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      {thread.updated_at ? (
-                        format(parseISO(thread.updated_at), 'h:mm a')
-                      ) : (
-                        '--:-- --'
-                      )}
-                    </p>
-                  </button>
-                  <div className="relative">
-                    <button
-                      onClick={() => setActiveThreadMenu(activeThreadMenu === thread.id ? null : thread.id)}
-                      className="p-1 rounded hover:bg-muted-foreground/10"
-                    >
-                      <MoreVertical className="h-4 w-4 text-muted-foreground" />
-                    </button>
-                    {activeThreadMenu === thread.id && (
-                      <ThreadActions
-                        thread={thread}
-                        onClose={() => setActiveThreadMenu(null)}
-                      />
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        ))}
-        {filteredThreads.length === 0 && (
+      <div className="flex-1">
+        {groupedThreads.length > 0 ? (
+          <Virtuoso
+            data={groupedThreads}
+            itemContent={renderThread}
+            className="h-full"
+            overscan={5}
+          />
+        ) : (
           <div className="p-4 text-center text-muted-foreground text-sm">
             {threads.length === 0 
               ? 'No conversations yet'

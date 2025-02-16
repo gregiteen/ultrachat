@@ -1,4 +1,5 @@
 import { supabase } from '../supabase';
+export * from './calendar';
 
 const OAUTH_CONFIGS = {
   gmail: {

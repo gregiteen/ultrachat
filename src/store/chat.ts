@@ -2,139 +2,240 @@ import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
 import { getChatModel } from '../lib/gemini';
 import type { Message, Thread } from '../types';
-import { PostgrestResponse, PostgrestSingleResponse, PostgrestMaybeSingleResponse } from '@supabase/supabase-js';
+import { debounce } from '../lib/utils';
+import { QueryBuilder } from '../lib/db';
 
-interface ChatState {
-  messages: Message[];
-  threads: Thread[];
-  loading: boolean;
-  error: string | null;
-  currentThreadId: string | null;
-  streamingMessageId: string | null;
-  fetchMessages: (threadId: string) => Promise<void>;
-  fetchThreads: () => Promise<void>;
-  sendMessage: (content: string, files?: string[], contextId?: string) => Promise<void>;
-  switchThread: (threadId: string) => Promise<void>;
-  clearMessages: () => void;
-  renameThread: (threadId: string, title: string) => Promise<void>;
-  deleteThread: (threadId: string) => Promise<void>;
-  togglePinThread: (threadId: string) => Promise<void>;
-  updateStreamingMessage: (content: string) => void;
-}
+// Helper function to safely handle response text
+const getResponseText = (response: { text: () => string } | null | undefined): string => {
+  if (!response?.text) return '';
+  try {
+    const text = response.text();
+    return text || '';
+  } catch {
+    return '';
+  }
+};
 
-async function generateThreadTitle(messages: Message[]): Promise<string> {
-  const model = getChatModel();
-  const prompt = `Based on this conversation, generate a very concise title (max 30 chars) that captures the main topic. Be direct and specific.
+// Helper function to safely join message parts
+const joinMessageParts = (parts: (string | null | undefined)[]): string => {
+  return parts
+    .filter((part): part is string => typeof part === 'string' && part.length > 0)
+    .join('');
+};
 
-Conversation:
-${messages.map(m => `${m.role}: ${m.content}`).join('\n')}
+// LRU Cache implementation with improved type safety
+class LRUCache<K, V> {
+  private capacity: number;
+  private cache: Map<K, V>;
 
-Generate only the title, nothing else.`;
-
-  const result = await model.generateContent(prompt);
-  let title = result.response.text().trim();
-
-  // Remove any AI Generated suffix if present
-  title = title.replace(/\s*-?\s*AI\s*Generated\s*$/i, '');
-
-  // Truncate if too long
-  if (title.length > 30) {
-    title = title.substring(0, 27) + '...';
+  constructor(capacity: number) {
+    this.capacity = capacity;
+    this.cache = new Map();
   }
 
-  return title;
+  get(key: K): V | null {
+    const value = this.cache.get(key);
+    if (!value) return null;
+    
+    // Move accessed item to the end (most recently used)
+    this.cache.delete(key);
+    this.cache.set(key, value);
+    return value;
+  }
+
+  put(key: K, value: V): void {
+    if (this.cache.has(key)) {
+      this.cache.delete(key);
+    } else if (this.cache.size >= this.capacity) {
+      // Remove the first item (least recently used)
+      const firstKey = this.cache.keys().next().value;
+      if (firstKey !== undefined) {
+        this.cache.delete(firstKey);
+      }
+    }
+    this.cache.set(key, value);
+  }
+
+  clear(): void {
+    this.cache.clear();
+  }
 }
 
-export const useChatStore = create<ChatState>((set, get) => ({
+// Custom error types for better error handling
+class ChatError extends Error {
+  constructor(
+    message: string,
+    public code: 'AUTH_ERROR' | 'NETWORK_ERROR' | 'DATABASE_ERROR' | 'FILE_ERROR' | 'CACHE_ERROR',
+    public recoverable: boolean = true
+  ) {
+    super(message);
+    this.name = 'ChatError';
+  }
+}
+
+// Helper for user-friendly error messages
+const getErrorMessage = (error: unknown): string => {
+  if (error instanceof ChatError) {
+    return error.message;
+  }
+  if (error instanceof Error) return error.message;
+  return 'An unexpected error occurred. Please try again.';
+};
+
+// Message store type definitions
+interface MessageState {
+  messages: Message[];
+  messageCache: LRUCache<string, Message[]>;
+  hasMoreMessages: boolean;
+  currentPage: number;
+  loading: boolean;
+  sendingMessage: boolean;
+  error: string | null;
+  streamingMessageId: string | null;
+  fetchMessages: (threadId: string, page?: number) => Promise<void>;
+  sendMessage: (content: string, files?: string[], contextId?: string) => Promise<void>;
+  clearThreadMessages: (threadId: string) => void;
+  updateStreamingMessage: (content: string) => void;
+  prefetchNextPage: (threadId: string) => Promise<void>;
+}
+
+const MESSAGES_PER_PAGE = 25;
+const CACHE_SIZE = 10;
+
+// Create the message store first so we can use it in the thread store
+export const useMessageStore = create<MessageState>((set, get) => ({
   messages: [],
-  threads: [],
+  messageCache: new LRUCache<string, Message[]>(CACHE_SIZE),
+  hasMoreMessages: true,
+  currentPage: 1,
   loading: false,
+  sendingMessage: false,
   error: null,
-  currentThreadId: null,
   streamingMessageId: null,
 
-  fetchThreads: async () => {
+  fetchMessages: async (threadId: string, page = 1) => {
     set({ loading: true, error: null });
     try {
+      // Check cache first
+      if (page === 1) {
+        const cachedMessages = get().messageCache.get(threadId);
+        if (cachedMessages) {
+          set({ messages: cachedMessages, loading: false });
+          // Prefetch next page in background
+          get().prefetchNextPage(threadId);
+          return;
+        }
+      }
+
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('User not authenticated');
+      if (!user) throw new ChatError(
+        'Please sign in to view messages.',
+        'AUTH_ERROR'
+      );
 
-      const { data, error } = await supabase
-        .from('threads')
-        .select('*')
-        .eq('user_id', user.id)
-        .is('deleted_at', null)
-        .order('updated_at', { ascending: false });
+      const offset = (page - 1) * MESSAGES_PER_PAGE;
+      
+      const { data, error, count } = await QueryBuilder
+        .from(supabase, 'messages')
+        .select('*', { count: 'exact' })
+        .eq('thread_id', threadId)
+        .order('created_at', { ascending: false })
+        .range(offset, offset + MESSAGES_PER_PAGE - 1);
 
-      if (error) throw error;
-      console.log("Fetch Threads - Raw Data:", data);
+      if (error) throw new ChatError(
+        'Failed to load messages. Please check your connection.',
+        'DATABASE_ERROR',
+        true
+      );
 
-      // Sort threads with pinned ones first
-      const sortedThreads = [...(data || [])].sort((a, b) => {
-        return (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+      const hasMore = count ? offset + MESSAGES_PER_PAGE < count : false;
+      const fetchedMessages = (data || []).reverse();
+
+      // Update cache and state
+      const existingMessages = page === 1 ? [] : get().messages;
+      const newMessages = [...existingMessages, ...fetchedMessages];
+      
+      if (page === 1 && newMessages.length > 0) {
+        get().messageCache.put(threadId, newMessages);
+      }
+
+      set({
+        messages: newMessages,
+        hasMoreMessages: hasMore,
+        currentPage: page
       });
 
-      set({ threads: sortedThreads });
-
+      // Prefetch next page if available
+      if (hasMore) {
+        get().prefetchNextPage(threadId);
+      }
     } catch (error) {
-      console.error('Error fetching threads:', error);
-      set({ error: error instanceof Error ? error.message : 'Failed to fetch threads' });
+      console.error('Error fetching messages:', error);
+      set({ error: getErrorMessage(error) });
     } finally {
       set({ loading: false });
     }
   },
 
-  fetchMessages: async (threadId: string) => {
-    set({ loading: true, error: null });
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('User not authenticated');
+  prefetchNextPage: async (threadId: string) => {
+    const { currentPage, hasMoreMessages, loading } = get();
+    if (!hasMoreMessages || loading) return;
 
-      const { data, error } = await supabase
-        .from('messages')
+    const nextPage = currentPage + 1;
+    const offset = (nextPage - 1) * MESSAGES_PER_PAGE;
+
+    try {
+      const { data } = await QueryBuilder
+        .from(supabase, 'messages')
         .select('*')
         .eq('thread_id', threadId)
-        .order('created_at', { ascending: true });
+        .order('created_at', { ascending: false })
+        .range(offset, offset + MESSAGES_PER_PAGE - 1);
 
-      console.log("Fetch Messages - Raw Data:", data);
-      console.log("Fetch Messages - Error:", error);
-      if (error) throw error;
-
-      set({ messages: data || [], currentThreadId: threadId });
-
+      if (data && data.length > 0) {
+        // Store in cache for later use
+        const existingMessages = get().messages;
+        const prefetchedMessages = [...existingMessages, ...data.reverse()];
+        get().messageCache.put(threadId, prefetchedMessages);
+      }
     } catch (error) {
-      console.error('Error fetching messages:', error);
-      set({ error: error instanceof Error ? error.message : 'Failed to fetch messages' });
-    } finally {
-      set({ loading: false });
+      console.error('Error prefetching messages:', error);
+      // Don't set error state for prefetch failures
+      // as they're not critical to the user experience
+      // but log for monitoring
+      console.warn('Prefetch failed:', getErrorMessage(error));
+    }
+  },
+
+  clearThreadMessages: (threadId: string) => {
+    get().messageCache.clear();
+    if (threadId === useThreadStore.getState().currentThreadId) {
+      set({ messages: [] });
     }
   },
 
   updateStreamingMessage: (content: string) => {
     const { messages, streamingMessageId } = get();
-    if (!streamingMessageId) return;
+    if (!streamingMessageId || !content) return;
 
-    set({
-      messages: messages.map(msg =>
-        msg.id === streamingMessageId
-          ? { ...msg, content }
-          : msg
-      )
-    });
+    const updatedMessages = messages.map(msg =>
+      msg.id === streamingMessageId ? { ...msg, content } : msg
+    );
+    
+    set({ messages: updatedMessages });
   },
 
   sendMessage: async (content: string, files?: string[], contextId?: string) => {
-    set({ loading: true, error: null });
+    set({ sendingMessage: true, error: null });
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('User not authenticated');
+      if (!user) throw new ChatError('Please sign in to send messages.', 'AUTH_ERROR');
 
-      let threadId = get().currentThreadId;
+      let threadId = useThreadStore.getState().currentThreadId;
 
-      // Create new thread if needed
       if (!threadId) {
-        const { data: thread, error: threadError } = await supabase
-          .from('threads')
+        const { data: thread, error: threadError } = await QueryBuilder
+          .from(supabase, 'threads')
           .insert({
             id: crypto.randomUUID(),
             user_id: user.id,
@@ -144,102 +245,111 @@ export const useChatStore = create<ChatState>((set, get) => ({
           .select()
           .single();
 
-        if (threadError) throw threadError;
+        if (threadError) throw new ChatError(
+          'Failed to create new conversation. Please try again.',
+          'DATABASE_ERROR',
+          true
+        );
         threadId = thread!.id;
-        set({ currentThreadId: threadId });
+        useThreadStore.getState().switchThread(threadId);
       }
 
       // Get context if provided
       let contextContent = '';
       if (contextId) {
-        const { data: context, error: contextError } = await supabase
-          .from('contexts')
+        const { data: context } = await QueryBuilder
+          .from(supabase, 'contexts')
           .select('content')
           .eq('id', contextId)
           .single();
 
-        if (contextError) {
-          console.error("Error fetching context:", contextError);
-        }
-
-        if (context) {
+        if (context?.content) {
           contextContent = `Context: ${context.content}\n\n`;
         }
       }
 
-      // Insert user message
-      const messageData = {
+      // Insert user message with optimistic update
+      const optimisticMessage = {
+        id: crypto.randomUUID(),
         content,
         role: 'user',
         thread_id: threadId,
         user_id: user.id,
         context_id: contextId,
-        files: files || []
-      };
+        files: files || [],
+        created_at: new Date().toISOString(),
+      } as Message;
 
-      console.log('Sending message:', messageData);
+      // Optimistic update
+      const updatedMessages = [...get().messages, optimisticMessage];
+      set({ messages: updatedMessages });
 
-      const { data: userMessage, error: userError } = await supabase
-        .from('messages')
-        .insert(messageData)
+      const { data: userMessage, error: userError } = await QueryBuilder
+        .from(supabase, 'messages')
+        .insert({
+          content,
+          role: 'user',
+          thread_id: threadId,
+          user_id: user.id,
+          context_id: contextId,
+          files: files || []
+        })
         .select('*, files')
         .single();
 
-      if (userError) throw userError;
-      set({ messages: [...get().messages, userMessage!] });
+      if (userError) throw new ChatError(
+        'Failed to send message. Please try again.',
+        'DATABASE_ERROR',
+        true
+      );
+
+      // Update cache
+      get().messageCache.put(threadId, updatedMessages);
 
       // Handle AI response
       const model = getChatModel();
-
       let fileContent = '';
-      if (files && files.length > 0) {
+      
+      if (files?.length) {
         for (const filePath of files) {
           try {
-            const { data: fileData, error: fileError } = await supabase.storage
+            const { data: fileData } = await supabase.storage
               .from('user-uploads')
               .download(filePath);
 
-            if (fileError) {
-              console.error("Error downloading file:", fileError);
-              continue;
-            }
-            if (!fileData) {
-              console.error("File data is null:", filePath);
-              continue;
-            }
-
-            const fileText = await fileData.text();
-
-            if (filePath.endsWith('.txt') || filePath.endsWith('.md') || filePath.endsWith('.csv') || filePath.endsWith('.json') || filePath.endsWith('.xml')) {
-              fileContent += `\n\nContent of ${filePath}:\n${fileText.substring(0, 2000)}\n`;
-            } else {
-              fileContent += `\n\nUploaded file: ${filePath} (Type: ${fileData.type})\n`;
+            if (fileData) {
+              const fileText = await fileData.text();
+              if (filePath.match(/\.(txt|md|csv|json|xml)$/)) {
+                fileContent += `\n\nContent of ${filePath}:\n${fileText.substring(0, 2000)}\n`;
+              } else {
+                fileContent += `\n\nUploaded file: ${filePath} (Type: ${fileData.type})\n`;
+              }
             }
           } catch (error) {
-            console.error("Error processing file:", filePath, error);
+            console.error('Error processing file:', filePath, error);
+            throw new ChatError(
+              `Failed to process file: ${filePath}. Please try uploading again.`,
+              'FILE_ERROR'
+            );
           }
         }
       }
 
-      const chat = model.startChat({
-        history: [
-          {
-            role: "user",
-            parts: [{ text: "hi" }],
-          },
-          {
-            role: "model",
-            parts: [{ text: "hello, how can i help?" }],
-          },
-        ],
-      });
+      const chat = model.startChat();
+      const messageText = joinMessageParts([contextContent, content, fileContent]);
+      const result = await chat.sendMessage(messageText);
+      const response = getResponseText(result.response);
 
-      const result = await chat.sendMessage(contextContent + content + fileContent);
-      const response = result.response.text();
-      console.log(response);
+      if (!response) {
+        throw new ChatError(
+          'No response received from AI. Please try again.',
+          'NETWORK_ERROR',
+          true
+        );
+      }
 
-      const { data: aiMessage, error: aiError } = await supabase
-        .from('messages')
+      const { data: aiMessage, error: aiError } = await QueryBuilder
+        .from(supabase, 'messages')
         .insert({
           content: response,
           role: 'assistant',
@@ -251,41 +361,107 @@ export const useChatStore = create<ChatState>((set, get) => ({
         .select()
         .single();
 
-      if (aiError) throw aiError;
-      set({ messages: [...get().messages, aiMessage!] });
+      if (aiError) throw new ChatError(
+        'Failed to receive AI response. Please try again.',
+        'DATABASE_ERROR',
+        true
+      );
+
+      // Update messages and cache with AI response
+      const finalMessages = [...get().messages, aiMessage!];
+      get().messageCache.put(threadId, finalMessages);
+      set({ messages: finalMessages });
 
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'An error occurred';
-      console.error('Error in chat:', errorMessage);
-      set({ error: errorMessage });
+      console.error('Error in chat:', error);
+      set({ error: getErrorMessage(error) });
       throw error;
+    } finally {
+      set({ sendingMessage: false });
+    }
+  }
+}));
+
+// Thread store type definitions
+interface ThreadState {
+  threads: Thread[];
+  loading: boolean;
+  error: string | null;
+  currentThreadId: string | null;
+  fetchThreads: () => Promise<void>;
+  switchThread: (threadId: string) => Promise<void>;
+  renameThread: (threadId: string, title: string) => Promise<void>;
+  deleteThread: (threadId: string) => Promise<void>;
+  togglePinThread: (threadId: string) => Promise<void>;
+}
+
+export const useThreadStore = create<ThreadState>((set, get) => ({
+  threads: [],
+  loading: false,
+  error: null,
+  currentThreadId: null,
+
+  fetchThreads: async () => {
+    set({ loading: true, error: null });
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new ChatError(
+        'Please sign in to continue.',
+        'AUTH_ERROR'
+      );
+
+      const { data, error } = await QueryBuilder
+        .from(supabase, 'threads')
+        .select('*')
+        .eq('user_id', user.id)
+        .is('deleted_at', null)
+        .order('updated_at', { ascending: false });
+
+      if (error) throw new ChatError(
+        'Failed to load your conversations. Please check your connection.',
+        'DATABASE_ERROR',
+        true
+      );
+
+      const sortedThreads = [...(data || [])].sort((a, b) => {
+        return (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || 
+               new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+      });
+
+      set({ threads: sortedThreads });
+    } catch (error) {
+      console.error('Error fetching threads:', error);
+      set({ error: getErrorMessage(error) });
     } finally {
       set({ loading: false });
     }
   },
 
   switchThread: async (threadId: string) => {
-    await get().fetchMessages(threadId);
-  },
-
-  clearMessages: () => {
-    set({ messages: [], currentThreadId: null });
+    set({ currentThreadId: threadId });
+    useMessageStore.getState().fetchMessages(threadId);
   },
 
   renameThread: async (threadId: string, title: string) => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('User not authenticated');
+      if (!user) throw new ChatError(
+        'Please sign in to rename this conversation.',
+        'AUTH_ERROR'
+      );
 
-      const { error } = await supabase
-        .from('threads')
+      const { error } = await QueryBuilder
+        .from(supabase, 'threads')
         .update({ title })
         .eq('id', threadId)
         .eq('user_id', user.id);
 
-      if (error) throw error;
+      if (error) throw new ChatError(
+        'Failed to rename conversation. Please try again.',
+        'DATABASE_ERROR',
+        true
+      );
 
-      // Update local state
       set({
         threads: get().threads.map(thread =>
           thread.id === threadId ? { ...thread, title } : thread
@@ -300,20 +476,27 @@ export const useChatStore = create<ChatState>((set, get) => ({
   deleteThread: async (threadId: string) => {
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('User not authenticated');
+      if (!user) throw new ChatError(
+        'Please sign in to delete this conversation.',
+        'AUTH_ERROR'
+      );
 
-      const { error } = await supabase
-        .from('threads')
+      const { error } = await QueryBuilder
+        .from(supabase, 'threads')
         .update({ deleted_at: new Date().toISOString() })
         .eq('id', threadId)
         .eq('user_id', user.id);
 
-      if (error) throw error;
+      if (error) throw new ChatError(
+        'Failed to delete conversation. Please try again.',
+        'DATABASE_ERROR',
+        true
+      );
 
-      // Update local state
       set({
         threads: get().threads.filter(thread => thread.id !== threadId)
       });
+      useMessageStore.getState().clearThreadMessages(threadId);
     } catch (error) {
       console.error('Error deleting thread:', error);
       throw error;
@@ -323,20 +506,27 @@ export const useChatStore = create<ChatState>((set, get) => ({
   togglePinThread: async (threadId: string) => {
     try {
       const thread = get().threads.find(t => t.id === threadId);
-      if (!thread) throw new Error('Thread not found');
+      if (!thread) throw new ChatError(
+        'Conversation not found. It may have been deleted.',
+        'DATABASE_ERROR',
+        false
+      );
 
-      const { error } = await supabase
-        .from('threads')
+      const { error } = await QueryBuilder
+        .from(supabase, 'threads')
         .update({ pinned: !thread.pinned })
         .eq('id', threadId);
 
-      if (error) throw error;
+      if (error) throw new ChatError(
+        'Failed to update conversation pin status. Please try again.',
+        'DATABASE_ERROR'
+      );
 
-      // Update local state and re-sort threads
       const updatedThreads = get().threads.map(t =>
         t.id === threadId ? { ...t, pinned: !t.pinned } : t
       ).sort((a, b) => {
-        return (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+        return (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || 
+               new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
       });
 
       set({ threads: updatedThreads });

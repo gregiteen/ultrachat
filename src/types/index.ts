@@ -86,6 +86,7 @@ export interface Task {
   due_date?: string;
   created_at: string;
   updated_at: string;
+  parent_id?: string;
 }
 
 export interface UnifiedMessage {

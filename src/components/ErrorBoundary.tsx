@@ -1,9 +1,9 @@
-import React, { Component, ErrorInfo, ReactNode } from 'react';
-import { AlertTriangle } from 'lucide-react';
+import React from 'react';
 
 interface Props {
-  children: ReactNode;
-  fallback?: ReactNode;
+  children: React.ReactNode;
+  fallback?: React.ReactNode;
+  onError?: (error: Error, errorInfo: React.ErrorInfo) => void;
 }
 
 interface State {
@@ -11,37 +11,65 @@ interface State {
   error: Error | null;
 }
 
-export class ErrorBoundary extends Component<Props, State> {
-  public state: State = {
-    hasError: false,
-    error: null
+export class ErrorBoundary extends React.Component<Props, State> {
+  constructor(props: Props) {
+    super(props);
+    this.state = {
+      hasError: false,
+      error: null
+    };
+  }
+
+  static getDerivedStateFromError(error: Error): State {
+    return {
+      hasError: true,
+      error
+    };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('Error caught by boundary:', error, errorInfo);
+    this.props.onError?.(error, errorInfo);
+  }
+
+  private handleRetry = () => {
+    this.setState({
+      hasError: false,
+      error: null
+    });
   };
 
-  public static getDerivedStateFromError(error: Error): State {
-    return { hasError: true, error };
-  }
-
-  public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('Uncaught error:', error, errorInfo);
-  }
-
-  public render() {
+  render() {
     if (this.state.hasError) {
-      return this.props.fallback || (
-        <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
-          <div className="text-center">
-            <AlertTriangle className="mx-auto h-12 w-12 text-yellow-500" />
-            <h1 className="mt-4 text-lg font-semibold text-gray-900">
-              Something went wrong
-            </h1>
-            <p className="mt-2 text-gray-600">
-              Please try refreshing the page or contact support if the problem persists.
-            </p>
+      if (this.props.fallback) {
+        return this.props.fallback;
+      }
+
+      return (
+        <div
+          role="alert"
+          className="flex flex-col items-center justify-center p-4 rounded-lg bg-red-50 text-red-800"
+        >
+          <h2 className="text-lg font-semibold mb-2">
+            Something went wrong
+          </h2>
+          <p className="text-sm mb-4">
+            {this.state.error?.message || 'An unexpected error occurred'}
+          </p>
+          <div className="flex gap-2">
+            <button
+              onClick={this.handleRetry}
+              className="px-4 py-2 text-sm font-medium text-white bg-red-600 rounded-md hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+              aria-label="Retry loading the component"
+            >
+              Try Again
+            </button>
             <button
               onClick={() => window.location.reload()}
-              className="mt-4 rounded-lg bg-blue-600 px-4 py-2 text-white hover:bg-blue-700"
+              className="px-4 py-2 text-sm font-medium text-red-700 bg-red-100 rounded-md hover:bg-red-200 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500"
+              aria-label="Reload the page"
             >
-              Refresh Page
+              Reload Page
             </button>
           </div>
         </div>
@@ -50,4 +78,17 @@ export class ErrorBoundary extends Component<Props, State> {
 
     return this.props.children;
   }
+}
+
+export function withErrorBoundary<P extends object>(
+  Component: React.ComponentType<P>,
+  errorBoundaryProps?: Omit<Props, 'children'>
+) {
+  return function WithErrorBoundary(props: P) {
+    return (
+      <ErrorBoundary {...errorBoundaryProps}>
+        <Component {...props} />
+      </ErrorBoundary>
+    );
+  };
 }

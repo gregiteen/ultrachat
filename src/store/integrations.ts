@@ -1,6 +1,10 @@
 import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
 import type { Integration } from '../types';
+import { initiateGmailOAuth, exchangeGmailCode, refreshGmailToken } from '../lib/oauth/gmail';
+import { initiateCalendarOAuth, exchangeCalendarCode, refreshCalendarToken } from '../lib/oauth/calendar';
+import { GmailExecutor } from '../lib/agents/executors/gmail';
+import { CalendarExecutor } from '../lib/agents/executors/calendar';
 
 interface IntegrationsState {
   integrations: Integration[];
@@ -17,6 +21,11 @@ interface IntegrationsState {
   testCustomIntegration: (id: string) => Promise<void>;
   deleteCustomIntegration: (id: string) => Promise<void>;
   refreshToken: (integrationId: string) => Promise<void>;
+  connectGmail: () => Promise<void>;
+  connectOutlook: () => Promise<void>;
+  getGmailExecutor: () => Promise<GmailExecutor | null>;
+  connectCalendar: () => Promise<void>;
+  getCalendarExecutor: () => Promise<CalendarExecutor | null>;
 }
 
 export const useIntegrationsStore = create<IntegrationsState>((set, get) => ({
@@ -45,54 +54,15 @@ export const useIntegrationsStore = create<IntegrationsState>((set, get) => ({
   },
 
   connectIntegration: async (type) => {
-    set({ loading: true, error: null });
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('User not authenticated');
-
-      // Initialize OAuth flow based on integration type
-      const authWindow = window.open('', '_blank');
-      if (!authWindow) throw new Error('Popup blocked');
-
-      // Handle OAuth callback and token exchange
-      const handleCallback = async (event: MessageEvent) => {
-        if (event.origin !== window.location.origin) return;
-        if (event.data.type !== 'oauth_callback') return;
-
-        const { code } = event.data;
-        
-        // Exchange code for tokens
-        const { data, error } = await supabase
-          .from('integrations')
-          .upsert({
-            user_id: user.id,
-            type,
-            status: 'connected',
-            credentials: {
-              // TODO: Exchange code for actual tokens
-              access_token: 'temp_token',
-              refresh_token: 'temp_refresh_token',
-              expires_at: Date.now() + 3600000,
-              scope: [],
-            },
-          })
-          .select()
-          .single();
-
-        if (error) throw error;
-        
-        await get().fetchIntegrations();
-        window.removeEventListener('message', handleCallback);
-      };
-
-      window.addEventListener('message', handleCallback);
-      
-      // TODO: Implement proper OAuth flow for each provider
-      authWindow.location.href = `https://example.com/oauth/${type}`;
-    } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'An error occurred' });
-    } finally {
-      set({ loading: false });
+    switch (type) {
+      case 'gmail':
+        return get().connectGmail();
+      case 'google_calendar':
+        return get().connectCalendar();
+      case 'outlook':
+        return get().connectOutlook();
+      default:
+        throw new Error(`Unsupported integration type: ${type}`);
     }
   },
 
@@ -132,7 +102,7 @@ export const useIntegrationsStore = create<IntegrationsState>((set, get) => ({
           settings: {
             name,
             endpoint,
-            api_key: apiKey // Note: In production, encrypt this!
+            api_key: apiKey
           }
         })
         .select()
@@ -155,7 +125,6 @@ export const useIntegrationsStore = create<IntegrationsState>((set, get) => ({
         throw new Error('Invalid integration');
       }
 
-      // Test the endpoint
       const response = await fetch(integration.settings.endpoint, {
         headers: {
           Authorization: `Bearer ${integration.settings.api_key}`,
@@ -164,7 +133,6 @@ export const useIntegrationsStore = create<IntegrationsState>((set, get) => ({
 
       if (!response.ok) throw new Error('API test failed');
 
-      // Update last tested timestamp
       const { error } = await supabase
         .from('integrations')
         .update({
@@ -176,7 +144,6 @@ export const useIntegrationsStore = create<IntegrationsState>((set, get) => ({
       if (error) throw error;
       await get().fetchIntegrations();
     } catch (error) {
-      // Update status to error
       await supabase
         .from('integrations')
         .update({
@@ -216,14 +183,24 @@ export const useIntegrationsStore = create<IntegrationsState>((set, get) => ({
         throw new Error('No refresh token available');
       }
 
-      // TODO: Implement token refresh logic for each provider
+      let newCredentials;
+      switch (integration.type) {
+        case 'gmail':
+          newCredentials = await refreshGmailToken(integration.credentials.refresh_token);
+          break;
+        case 'google_calendar':
+          newCredentials = await refreshCalendarToken(integration.credentials.refresh_token);
+          break;
+        default:
+          throw new Error(`Unsupported integration type: ${integration.type}`);
+      }
+
       const { error } = await supabase
         .from('integrations')
         .update({
           credentials: {
             ...integration.credentials,
-            access_token: 'new_token',
-            expires_at: Date.now() + 3600000,
+            ...newCredentials,
           },
         })
         .eq('id', integrationId);
@@ -236,4 +213,126 @@ export const useIntegrationsStore = create<IntegrationsState>((set, get) => ({
       set({ loading: false });
     }
   },
+
+  connectGmail: async () => {
+    set({ loading: true, error: null });
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
+      const authUrl = await initiateGmailOAuth();
+      const authWindow = window.open(authUrl, '_blank');
+      if (!authWindow) throw new Error('Popup blocked');
+
+      const handleCallback = async (event: MessageEvent) => {
+        if (event.origin !== window.location.origin) return;
+        if (event.data.type !== 'oauth_callback') return;
+
+        const { code } = event.data;
+        const credentials = await exchangeGmailCode(code);
+
+        const { error } = await supabase
+          .from('integrations')
+          .upsert({
+            user_id: user.id,
+            type: 'gmail',
+            status: 'connected',
+            credentials,
+          })
+          .select()
+          .single();
+
+        if (error) throw error;
+        
+        await get().fetchIntegrations();
+        window.removeEventListener('message', handleCallback);
+      };
+
+      window.addEventListener('message', handleCallback);
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : 'An error occurred' });
+    } finally {
+      set({ loading: false });
+    }
+  },
+
+  connectCalendar: async () => {
+    set({ loading: true, error: null });
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
+      const authUrl = await initiateCalendarOAuth();
+      const authWindow = window.open(authUrl, '_blank');
+      if (!authWindow) throw new Error('Popup blocked');
+
+      const handleCallback = async (event: MessageEvent) => {
+        if (event.origin !== window.location.origin) return;
+        if (event.data.type !== 'oauth_callback') return;
+
+        const { code } = event.data;
+        const credentials = await exchangeCalendarCode(code);
+
+        const { error } = await supabase
+          .from('integrations')
+          .upsert({
+            user_id: user.id,
+            type: 'google_calendar',
+            status: 'connected',
+            credentials,
+          })
+          .select()
+          .single();
+
+        if (error) throw error;
+        
+        await get().fetchIntegrations();
+        window.removeEventListener('message', handleCallback);
+      };
+
+      window.addEventListener('message', handleCallback);
+    } catch (error) {
+      set({ error: error instanceof Error ? error.message : 'An error occurred' });
+    } finally {
+      set({ loading: false });
+    }
+  },
+
+  connectOutlook: async () => {
+    // TODO: Implement Outlook OAuth flow
+    throw new Error('Outlook integration not implemented yet');
+  },
+
+  getGmailExecutor: async () => {
+    const integration = get().integrations.find(i => i.type === 'gmail');
+    if (!integration?.credentials) return null;
+
+    // Check if token needs refresh
+    if (integration.credentials.expires_at < Date.now()) {
+      await get().refreshToken(integration.id);
+      // Get updated integration after refresh
+      const updatedIntegration = get().integrations.find(i => i.type === 'gmail');
+      if (!updatedIntegration?.credentials) return null;
+      return new GmailExecutor(updatedIntegration.credentials);
+    }
+
+    return new GmailExecutor(integration.credentials);
+  },
+
+  getCalendarExecutor: async () => {
+    const integration = get().integrations.find(i => i.type === 'google_calendar');
+    if (!integration?.credentials) return null;
+
+    // Check if token needs refresh
+    if (integration.credentials.expires_at < Date.now()) {
+      await get().refreshToken(integration.id);
+      // Get updated integration after refresh
+      const updatedIntegration = get().integrations.find(i => i.type === 'google_calendar');
+      if (!updatedIntegration?.credentials) return null;
+      return new CalendarExecutor(updatedIntegration.credentials);
+    }
+
+    return new CalendarExecutor(integration.credentials);
+  },
+
 }));

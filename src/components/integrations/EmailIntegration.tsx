@@ -1,27 +1,113 @@
-import React, { useState } from 'react';
-import { Mail, Send, Inbox, Settings, RefreshCw } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Mail, Send, Inbox, Settings, RefreshCw, Loader2 } from 'lucide-react';
 import { useIntegrationsStore } from '../../store/integrations';
+import type { GmailMessage } from '../../lib/agents/executors/gmail';
 
-interface EmailMessage {
-  id: string;
-  subject: string;
-  from: string;
-  to: string[];
-  body: string;
-  timestamp: string;
-  read: boolean;
-  labels?: string[];
+interface ComposeEmailProps {
+  onSend: (options: { to: string[]; subject: string; body: string }) => Promise<void>;
+  onCancel: () => void;
+}
+
+function ComposeEmail({ onSend, onCancel }: ComposeEmailProps) {
+  const [to, setTo] = useState('');
+  const [subject, setSubject] = useState('');
+  const [body, setBody] = useState('');
+  const [sending, setSending] = useState(false);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!to || !subject || !body) return;
+
+    setSending(true);
+    try {
+      await onSend({
+        to: to.split(',').map(email => email.trim()),
+        subject,
+        body,
+      });
+      onCancel();
+    } catch (error) {
+      console.error('Failed to send email:', error);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center">
+      <div className="bg-background rounded-lg p-6 w-full max-w-2xl">
+        <h2 className="text-lg font-semibold mb-4">Compose Email</h2>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">To:</label>
+            <input
+              type="text"
+              value={to}
+              onChange={(e) => setTo(e.target.value)}
+              className="w-full px-3 py-2 rounded-md border bg-muted"
+              placeholder="email@example.com"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Subject:</label>
+            <input
+              type="text"
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+              className="w-full px-3 py-2 rounded-md border bg-muted"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Message:</label>
+            <textarea
+              value={body}
+              onChange={(e) => setBody(e.target.value)}
+              className="w-full px-3 py-2 rounded-md border bg-muted h-48"
+            />
+          </div>
+          <div className="flex justify-end space-x-2">
+            <button
+              type="button"
+              onClick={onCancel}
+              className="px-4 py-2 rounded-md hover:bg-muted"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={sending || !to || !subject || !body}
+              className="px-4 py-2 bg-primary text-button-text rounded-md hover:bg-primary/90 disabled:opacity-50"
+            >
+              {sending ? (
+                <Loader2 className="h-5 w-5 animate-spin" />
+              ) : (
+                'Send'
+              )}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
 }
 
 export function EmailIntegration() {
   const [selectedProvider, setSelectedProvider] = useState<'gmail' | 'outlook' | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
-  const [emails, setEmails] = useState<EmailMessage[]>([]);
+  const [emails, setEmails] = useState<GmailMessage[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const { integrations, connectGmail, connectOutlook, disconnectIntegration } = useIntegrationsStore();
+  const [showCompose, setShowCompose] = useState(false);
+  const { integrations, connectGmail, connectOutlook, disconnectIntegration, getGmailExecutor } = useIntegrationsStore();
 
   const emailIntegration = integrations.find(i => i.type === 'gmail' || i.type === 'outlook');
   const isConnected = !!emailIntegration;
+
+  useEffect(() => {
+    if (isConnected) {
+      setSelectedProvider(emailIntegration.type as 'gmail' | 'outlook');
+      refreshEmails();
+    }
+  }, [isConnected, emailIntegration?.type]);
 
   const handleConnect = async (provider: 'gmail' | 'outlook') => {
     setIsConnecting(true);
@@ -41,7 +127,7 @@ export function EmailIntegration() {
 
   const handleDisconnect = async () => {
     if (emailIntegration) {
-      await disconnectIntegration(emailIntegration.id);
+      await disconnectIntegration(emailIntegration.type);
       setSelectedProvider(null);
       setEmails([]);
     }
@@ -52,14 +138,35 @@ export function EmailIntegration() {
     
     setIsLoading(true);
     try {
-      // TODO: Implement email fetching
-      // const response = await fetchEmails();
-      // setEmails(response.emails);
+      const executor = await getGmailExecutor();
+      if (!executor) {
+        throw new Error('Failed to initialize email executor');
+      }
+      const messages = await executor.listMessages();
+      setEmails(messages);
     } catch (error) {
       console.error('Failed to fetch emails:', error);
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const handleSendEmail = async (options: { to: string[]; subject: string; body: string }) => {
+    const executor = await getGmailExecutor();
+    if (!executor) {
+      throw new Error('Failed to initialize email executor');
+    }
+    await executor.sendMessage(options);
+    await refreshEmails();
+  };
+
+  const handleMarkAsRead = async (messageId: string) => {
+    const executor = await getGmailExecutor();
+    if (!executor) return;
+    await executor.markAsRead(messageId);
+    setEmails(emails.map(email =>
+      email.id === messageId ? { ...email, read: true } : email
+    ));
   };
 
   if (!isConnected) {
@@ -99,6 +206,12 @@ export function EmailIntegration() {
         </div>
         <div className="flex items-center space-x-2">
           <button
+            onClick={() => setShowCompose(true)}
+            className="px-3 py-1 bg-primary text-button-text rounded-md hover:bg-primary/90"
+          >
+            Compose
+          </button>
+          <button
             onClick={refreshEmails}
             disabled={isLoading}
             className="p-2 rounded-lg hover:bg-muted transition-colors"
@@ -107,9 +220,9 @@ export function EmailIntegration() {
             <RefreshCw className={`h-5 w-5 ${isLoading ? 'animate-spin' : ''}`} />
           </button>
           <button
-            onClick={() => {}} // TODO: Implement settings
+            onClick={handleDisconnect}
             className="p-2 rounded-lg hover:bg-muted transition-colors"
-            title="Settings"
+            title="Disconnect"
           >
             <Settings className="h-5 w-5" />
           </button>
@@ -142,6 +255,7 @@ export function EmailIntegration() {
               {emails.map((email) => (
                 <div
                   key={email.id}
+                  onClick={() => !email.read && handleMarkAsRead(email.id)}
                   className="p-4 hover:bg-muted transition-colors cursor-pointer"
                 >
                   <div className="flex items-start justify-between">
@@ -151,6 +265,9 @@ export function EmailIntegration() {
                       </h3>
                       <p className="text-sm text-muted-foreground mt-1">
                         {email.from}
+                      </p>
+                      <p className="text-sm text-muted-foreground mt-1 line-clamp-2">
+                        {email.body}
                       </p>
                     </div>
                     <span className="text-xs text-muted-foreground">
@@ -163,6 +280,13 @@ export function EmailIntegration() {
           )}
         </div>
       </div>
+
+      {showCompose && (
+        <ComposeEmail
+          onSend={handleSendEmail}
+          onCancel={() => setShowCompose(false)}
+        />
+      )}
     </div>
   );
 }
