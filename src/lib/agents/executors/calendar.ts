@@ -1,6 +1,3 @@
-import { google } from 'googleapis';
-import { OAuth2Client } from 'google-auth-library';
-
 export interface CalendarEvent {
   id: string;
   summary: string;
@@ -25,29 +22,44 @@ export interface CalendarEvent {
 
 interface CalendarCredentials {
   access_token: string;
-  refresh_token: string;
   expires_at: number;
 }
 
+declare global {
+  interface Window {
+    gapi: any;
+  }
+}
+
 export class CalendarExecutor {
-  private oauth2Client: OAuth2Client;
+  private accessToken: string;
 
   constructor(credentials: CalendarCredentials) {
-    this.oauth2Client = new OAuth2Client({
-      clientId: import.meta.env.VITE_GOOGLE_CLIENT_ID,
-      clientSecret: import.meta.env.VITE_GOOGLE_CLIENT_SECRET,
-    });
+    this.accessToken = credentials.access_token;
+  }
 
-    this.oauth2Client.setCredentials({
-      access_token: credentials.access_token,
-      refresh_token: credentials.refresh_token,
-      expiry_date: credentials.expires_at,
-    });
+  private async loadGapiClient(): Promise<void> {
+    if (!window.gapi?.client?.calendar) {
+      await new Promise<void>((resolve) => {
+        const script = document.createElement('script');
+        script.src = 'https://apis.google.com/js/api.js';
+        script.onload = async () => {
+          await new Promise<void>(r => window.gapi.load('client', r));
+          await window.gapi.client.init({});
+          await window.gapi.client.load('calendar', 'v3');
+          resolve();
+        };
+        document.head.appendChild(script);
+      });
+    }
   }
 
   private async getCalendarClient() {
-    const calendar = google.calendar({ version: 'v3', auth: this.oauth2Client });
-    return calendar;
+    await this.loadGapiClient();
+    window.gapi.client.setToken({
+      access_token: this.accessToken
+    });
+    return window.gapi.client.calendar;
   }
 
   async listEvents(options: {
@@ -68,7 +80,7 @@ export class CalendarExecutor {
       q: options.query,
     });
 
-    return (response.data.items || []) as CalendarEvent[];
+    return response.result.items as CalendarEvent[];
   }
 
   async createEvent(options: {
@@ -83,7 +95,7 @@ export class CalendarExecutor {
 
     const response = await calendar.events.insert({
       calendarId: 'primary',
-      requestBody: {
+      resource: {
         summary: options.summary,
         description: options.description,
         start: options.start,
@@ -93,7 +105,7 @@ export class CalendarExecutor {
       },
     });
 
-    return response.data as CalendarEvent;
+    return response.result as CalendarEvent;
   }
 
   async updateEvent(eventId: string, options: {
@@ -109,7 +121,7 @@ export class CalendarExecutor {
     const response = await calendar.events.patch({
       calendarId: 'primary',
       eventId,
-      requestBody: {
+      resource: {
         summary: options.summary,
         description: options.description,
         start: options.start,
@@ -119,7 +131,7 @@ export class CalendarExecutor {
       },
     });
 
-    return response.data as CalendarEvent;
+    return response.result as CalendarEvent;
   }
 
   async deleteEvent(eventId: string): Promise<void> {

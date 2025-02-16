@@ -1,6 +1,8 @@
 import React from 'react';
+import { motion, type HTMLMotionProps, type MotionProps } from 'framer-motion';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '../../../utils';
+import { loadingStates, microInteractions } from '../../../theme/animations';
 
 const buttonVariants = cva(
   // Base styles
@@ -31,24 +33,38 @@ const buttonVariants = cva(
 );
 
 export interface ButtonProps
-  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
+  extends Omit<HTMLMotionProps<"button">, 
+    keyof VariantProps<typeof buttonVariants> | keyof MotionProps>,
     VariantProps<typeof buttonVariants> {
   loading?: boolean;
   icon?: React.ReactNode;
+  children?: React.ReactNode;
 }
 
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, fullWidth, loading, icon, children, disabled, ...props }, ref) => {
     return (
-      <button
+      <motion.button
         className={cn(buttonVariants({ variant, size, fullWidth, className }))}
         ref={ref}
         disabled={disabled || loading}
+        aria-busy={loading}
+        whileHover={!disabled && !loading ? { scale: 1.02 } : undefined}
+        whileTap={!disabled && !loading ? { scale: 0.98 } : undefined}
+        animate={loading ? {
+          scale: [1, 0.98, 1],
+          transition: { duration: 1, repeat: Infinity }
+        } : undefined}
         {...props}
       >
         {loading ? (
           <span className="mr-2">
-            <svg
+            <motion.svg
+              animate={{
+                rotate: 360,
+                transition: { duration: 1, repeat: Infinity, ease: "linear" }
+              }}
+              initial={{ rotate: 0 }}
               className="animate-spin h-4 w-4"
               xmlns="http://www.w3.org/2000/svg"
               fill="none"
@@ -67,13 +83,13 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
                 fill="currentColor"
                 d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
               />
-            </svg>
+            </motion.svg>
           </span>
         ) : icon ? (
           <span className="mr-2">{icon}</span>
         ) : null}
         {children}
-      </button>
+      </motion.button>
     );
   }
 );

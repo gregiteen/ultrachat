@@ -14,7 +14,7 @@ import { PersonalizationButton } from '../components/PersonalizationButton';
 import { PersonalizationWelcome } from '../components/PersonalizationWelcome';
 import { MessageSquare, AlertCircle, ChevronRight, ChevronLeft } from 'lucide-react';
 import { useSettingsStore } from '../store/settings';
-import { VirtualizedChatHistory } from '../components/VirtualizedChatHistory';
+import VirtualizedChatHistory from '../components/VirtualizedChatHistory';
 
 export default function Chat() {
   const navigate = useNavigate();

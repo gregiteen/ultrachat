@@ -1,5 +1,6 @@
 import type { Theme } from './types';
 import { themes } from './variants';
+import { generateFadeTransitions, generateReducedMotionStyles } from './animations';
 
 /**
  * Converts a theme object into CSS variables string
@@ -67,6 +68,9 @@ export function generateThemeVariables(theme: Theme): string {
       --radius-lg: ${theme.borderRadius.lg};
       --radius-full: ${theme.borderRadius.full};
     }
+
+    ${generateFadeTransitions(theme)}
+    ${generateReducedMotionStyles()}
   `;
 }
 

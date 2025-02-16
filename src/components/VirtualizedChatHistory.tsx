@@ -4,6 +4,7 @@ import { useMessageStore, useThreadStore } from '../store/chat';
 import { ChatMessage } from './ChatMessage';
 import type { Message } from '../types';
 import { withErrorBoundary } from './ErrorBoundary';
+import { Spinner } from '../design-system/components/feedback/Spinner';
 
 const OVERSCAN_COUNT = 20;
 const INTERSECTION_THRESHOLD = 0.5;
@@ -163,26 +164,12 @@ const VirtualizedChatHistory: React.FC = () => {
   );
 };
 
-interface LoadingSpinnerProps {
-  size: 'small' | 'large';
-}
-
-const LoadingSpinner: React.FC<LoadingSpinnerProps> = ({ size }) => {
-  const dimensions = size === 'large' ? 'h-8 w-8' : 'h-5 w-5';
-  
+const LoadingSpinner = ({ size }: { size: 'small' | 'large' }) => {
   return (
     <div 
       className="flex h-full items-center justify-center p-2"
-      role="status"
-      aria-label="Loading messages"
     >
-      <div 
-        className={`animate-spin rounded-full ${dimensions} border-b-2 border-primary`}
-        aria-hidden="true"
-      />
-      <span className="sr-only">
-        Loading messages
-      </span>
+      <Spinner size={size === 'large' ? 'lg' : 'sm'} color="primary" />
     </div>
   );
 };

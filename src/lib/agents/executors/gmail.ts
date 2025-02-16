@@ -1,6 +1,3 @@
-import { google } from 'googleapis';
-import { OAuth2Client } from 'google-auth-library';
-
 export interface GmailMessage {
   id: string;
   threadId: string;
@@ -15,7 +12,6 @@ export interface GmailMessage {
 
 interface GmailCredentials {
   access_token: string;
-  refresh_token: string;
   expires_at: number;
 }
 
@@ -24,25 +20,59 @@ interface MessageHeader {
   value: string;
 }
 
+interface GapiMessage {
+  id: string;
+  threadId: string;
+}
+
+interface GapiMessageDetails {
+  result: {
+    id: string;
+    threadId: string;
+    payload?: {
+      headers: MessageHeader[];
+    };
+    snippet?: string;
+    internalDate: string;
+    labelIds?: string[];
+  };
+}
+
+declare global {
+  interface Window {
+    gapi: any;
+  }
+}
+
 export class GmailExecutor {
-  private oauth2Client: OAuth2Client;
+  private accessToken: string;
 
   constructor(credentials: GmailCredentials) {
-    this.oauth2Client = new OAuth2Client({
-      clientId: import.meta.env.VITE_GOOGLE_CLIENT_ID,
-      clientSecret: import.meta.env.VITE_GOOGLE_CLIENT_SECRET,
-    });
+    this.accessToken = credentials.access_token;
+  }
 
-    this.oauth2Client.setCredentials({
-      access_token: credentials.access_token,
-      refresh_token: credentials.refresh_token,
-      expiry_date: credentials.expires_at,
-    });
+  private async loadGapiClient(): Promise<void> {
+    if (!window.gapi?.client?.gmail) {
+      await new Promise<void>((resolve) => {
+        const script = document.createElement('script');
+        script.src = 'https://apis.google.com/js/api.js';
+        script.onload = async () => {
+          await new Promise<void>(r => window.gapi.load('client', r));
+          await window.gapi.client.init({});
+          await window.gapi.client.load('gmail', 'v1');
+          resolve();
+        };
+        document.head.appendChild(script);
+      });
+    }
   }
 
   private async getGmailClient() {
-    const gmail = google.gmail({ version: 'v1', auth: this.oauth2Client });
-    return gmail;
+    await this.loadGapiClient();
+    window.gapi.client.setToken({
+      access_token: this.accessToken
+    });
+    return window.gapi.client.gmail;
   }
 
   async listMessages(maxResults = 20): Promise<GmailMessage[]> {
@@ -54,33 +84,33 @@ export class GmailExecutor {
       labelIds: ['INBOX'],
     });
 
-    if (!response.data.messages) {
+    if (!response.result.messages) {
       return [];
     }
 
     const messages = await Promise.all(
-      response.data.messages.map(async (message) => {
+      response.result.messages.map(async (message: GapiMessage) => {
         const details = await gmail.users.messages.get({
           userId: 'me',
-          id: message.id!,
-        });
+          id: message.id,
+        }) as GapiMessageDetails;
 
-        const headers = details.data.payload?.headers as MessageHeader[];
+        const headers = details.result.payload?.headers as MessageHeader[];
         const subject = headers?.find(h => h.name === 'Subject')?.value || '(no subject)';
         const from = headers?.find(h => h.name === 'From')?.value || '';
         const to = headers?.find(h => h.name === 'To')?.value?.split(',').map(addr => addr.trim()) || [];
-        const body = details.data.snippet || '';
+        const body = details.result.snippet || '';
 
         return {
-          id: message.id!,
-          threadId: message.threadId!,
+          id: message.id,
+          threadId: message.threadId,
           subject,
           from,
           to,
           body,
-          timestamp: new Date(parseInt(details.data.internalDate!)).toISOString(),
-          read: !details.data.labelIds?.includes('UNREAD'),
-          labels: details.data.labelIds || [],
+          timestamp: new Date(parseInt(details.result.internalDate)).toISOString(),
+          read: !details.result.labelIds?.includes('UNREAD'),
+          labels: details.result.labelIds || [],
         };
       })
     );
@@ -105,8 +135,8 @@ export class GmailExecutor {
 
     await gmail.users.messages.send({
       userId: 'me',
-      requestBody: {
-        raw: Buffer.from(message).toString('base64url'),
+      resource: {
+        raw: btoa(unescape(encodeURIComponent(message))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''),
       },
     });
   }
@@ -117,7 +147,7 @@ export class GmailExecutor {
     await gmail.users.messages.modify({
       userId: 'me',
       id: messageId,
-      requestBody: {
+      resource: {
         removeLabelIds: ['UNREAD'],
       },
     });
