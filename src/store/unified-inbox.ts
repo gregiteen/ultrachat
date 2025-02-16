@@ -19,13 +19,17 @@ export const useUnifiedInboxStore = create<UnifiedInboxState>((set) => ({
   fetchMessages: async () => {
     set({ loading: true, error: null });
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
       const { data, error } = await supabase
         .from('unified_messages')
         .select('*')
+        .eq('user_id', user.id)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
-      set({ messages: data });
+      set({ messages: (data as UnifiedMessage[] | null) || [] });
     } catch (error) {
       set({ error: error instanceof Error ? error.message : 'An error occurred' });
     } finally {
@@ -36,9 +40,13 @@ export const useUnifiedInboxStore = create<UnifiedInboxState>((set) => ({
   markAsRead: async (id: string) => {
     set({ loading: true, error: null });
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
       const { data, error } = await supabase
         .from('unified_messages')
         .update({ read: true })
+        .eq('user_id', user.id)
         .eq('id', id)
         .select()
         .single();
@@ -57,9 +65,13 @@ export const useUnifiedInboxStore = create<UnifiedInboxState>((set) => ({
   deleteMessage: async (id: string) => {
     set({ loading: true, error: null });
     try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
       const { error } = await supabase
         .from('unified_messages')
         .delete()
+        .eq('user_id', user.id)
         .eq('id', id);
 
       if (error) throw error;

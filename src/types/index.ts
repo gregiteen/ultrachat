@@ -232,4 +232,6 @@ export interface Thread {
  context_id: string | null;
  created_at: string;
  updated_at: string;
+ pinned: boolean;
+ deleted_at: string | null;
 }

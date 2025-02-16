@@ -30,6 +30,10 @@ export function ThemeSelector({
       accent: '#f59e0b',
       muted: '#f3f4f6',
       mutedForeground: '#6b7280',
+      inputBackground: '#ffffff',
+      buttonText: '#ffffff',
+      iconColor: '#2563eb',
+      iconHover: '#1d4ed8',
     },
     isCustom: true,
   });
@@ -51,30 +55,47 @@ export function ThemeSelector({
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {DESIGNER_THEMES.map((theme) => (
           <button
             key={theme.id}
             onClick={() => onThemeChange(theme)}
             className={`flex items-center gap-2 rounded-lg border p-4 transition-colors ${
               currentTheme.id === theme.id
-                ? 'border-blue-600 bg-blue-50'
+                ? `border-2 border-${theme.colors.primary}`
                 : 'border-gray-200 hover:border-blue-300'
             }`}
           >
             <div className="flex flex-1 items-center gap-3">
-              <div
-                className="h-10 w-10 rounded-full"
-                style={{ background: theme.colors.primary }}
-              />
+              <div className="flex flex-col gap-1">
+                <div className="flex gap-1">
+                  <div
+                    className="h-6 w-6 rounded-full"
+                    style={{ background: theme.colors.primary }}
+                    title="Primary"
+                  />
+                  <div
+                    className="h-6 w-6 rounded-full"
+                    style={{ background: theme.colors.secondary }}
+                    title="Secondary"
+                  />
+                  <div
+                    className="h-6 w-6 rounded-full"
+                    style={{ background: theme.colors.accent }}
+                    title="Accent"
+                  />
+                </div>
+                <div
+                  className="h-2 w-full rounded"
+                  style={{ background: theme.colors.muted }}
+                  title="Muted"
+                />
+              </div>
               <div className="text-left">
                 <p className="font-medium">{theme.name}</p>
                 <p className="text-sm text-gray-500">Designer Theme</p>
               </div>
             </div>
-            {currentTheme.id === theme.id && (
-              <Check className="h-5 w-5 text-blue-600" />
-            )}
           </button>
         ))}
       </div>
@@ -85,7 +106,7 @@ export function ThemeSelector({
           <h3 className="text-sm font-medium text-gray-900">Custom Themes</h3>
           <button
             onClick={() => setShowCustomizer(true)}
-            className="flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-1 text-sm hover:bg-gray-50"
+            className="flex items-center gap-2 rounded-lg border border-gray-300 px-3 py-1 text-sm hover:bg-gray-50 transition-colors"
           >
             <Plus className="h-4 w-4" />
             New Theme
@@ -99,23 +120,40 @@ export function ThemeSelector({
               onClick={() => onThemeChange(theme)}
               className={`flex items-center gap-2 rounded-lg border p-4 transition-colors ${
                 currentTheme.id === theme.id
-                  ? 'border-blue-600 bg-blue-50'
+                  ? `border-2 border-${theme.colors.primary}`
                   : 'border-gray-200 hover:border-blue-300'
               }`}
             >
               <div className="flex flex-1 items-center gap-3">
-                <div
-                  className="h-10 w-10 rounded-full"
-                  style={{ background: theme.colors.primary }}
-                />
+                <div className="flex flex-col gap-1">
+                  <div className="flex gap-1">
+                    <div
+                      className="h-6 w-6 rounded-full"
+                      style={{ background: theme.colors.primary }}
+                      title="Primary"
+                    />
+                    <div
+                      className="h-6 w-6 rounded-full"
+                      style={{ background: theme.colors.secondary }}
+                      title="Secondary"
+                    />
+                    <div
+                      className="h-6 w-6 rounded-full"
+                      style={{ background: theme.colors.accent }}
+                      title="Accent"
+                    />
+                  </div>
+                  <div
+                    className="h-2 w-full rounded"
+                    style={{ background: theme.colors.muted }}
+                    title="Muted"
+                  />
+                </div>
                 <div className="text-left">
                   <p className="font-medium">{theme.name}</p>
                   <p className="text-sm text-gray-500">Custom Theme</p>
                 </div>
               </div>
-              {currentTheme.id === theme.id && (
-                <Check className="h-5 w-5 text-blue-600" />
-              )}
               <button
                 onClick={(e) => {
                   e.stopPropagation();
@@ -145,7 +183,7 @@ export function ThemeSelector({
       {/* Custom Theme Creator */}
       {showCustomizer && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-          <div className="w-full max-w-lg rounded-lg bg-white p-6">
+          <div className="w-full max-w-2xl rounded-lg bg-white p-6 shadow-xl">
             <div className="mb-6 flex items-center justify-between">
               <h3 className="text-lg font-medium">Create Custom Theme</h3>
               <button
@@ -184,7 +222,7 @@ export function ThemeSelector({
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                 {Object.entries(customTheme.colors).map(([key, value]) => (
                   <div key={key}>
                     <label className="block text-sm font-medium text-gray-700">
@@ -206,7 +244,7 @@ export function ThemeSelector({
                             },
                           })
                         }
-                        className="block w-full flex-1 rounded-none rounded-r-md border border-gray-300"
+                        className="block w-full flex-1 rounded-none rounded-r-md border border-gray-300 h-10 cursor-pointer"
                       />
                     </div>
                   </div>
@@ -223,7 +261,7 @@ export function ThemeSelector({
                 </button>
                 <button
                   type="submit"
-                  className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                  className="rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 transition-colors"
                 >
                   Create Theme
                 </button>

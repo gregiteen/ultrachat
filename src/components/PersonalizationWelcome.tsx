@@ -1,6 +1,7 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { UserCog } from 'lucide-react';
+import { usePersonalizationStore } from '../store/personalization';
 
 interface PersonalizationWelcomeProps {
   onClose: () => void;
@@ -8,22 +9,42 @@ interface PersonalizationWelcomeProps {
 
 export function PersonalizationWelcome({ onClose }: PersonalizationWelcomeProps) {
   const navigate = useNavigate();
+  const [isClosing, setIsClosing] = useState(false);
+  const { setHasSeenWelcome, error } = usePersonalizationStore();
 
   const handleSetup = () => {
     navigate('/account?tab=personalization');
-    onClose();
+    handleClose();
+  };
+
+  const handleClose = async () => {
+    if (isClosing) return; // Prevent multiple clicks
+    setIsClosing(true);
+    
+    try {
+      await setHasSeenWelcome(true);
+      if (!error) onClose();
+    } catch (error) {
+      console.error('Failed to update welcome state:', error);
+      setIsClosing(false);
+    }
+  };
+
+  const handleMaybeLater = async () => {
+    try {
+      if (isClosing) return; // Prevent multiple clicks
+      setIsClosing(true);
+      await handleClose();
+    } catch (error) {
+      console.error('Error in maybe later:', error);
+    } finally {
+      setIsClosing(false);
+    }
   };
 
   useEffect(() => {
-    console.log("PersonalizationWelcome component mounted");
-    return () => {
-      console.log("PersonalizationWelcome component unmounted");
-    }
+    return () => setIsClosing(false);
   }, []);
-
-  useEffect(() => {
-      console.log("onClose prop:", onClose);
-  }, [onClose])
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50 backdrop-blur-sm">
@@ -68,7 +89,7 @@ export function PersonalizationWelcome({ onClose }: PersonalizationWelcomeProps)
 
           <div className="flex justify-end gap-4 pt-4">
             <button
-              onClick={() => { console.log("Maybe Later clicked"); onClose(); }}
+              onClick={handleMaybeLater}
               className="px-4 py-2 text-sm font-medium text-foreground bg-muted border border-muted rounded-md hover:bg-background"
             >
               Maybe Later

@@ -2,6 +2,59 @@
 @tailwind components;
 @tailwind utilities;
 
+
+/* Markdown content styles */
+.markdown-content {
+  @apply text-base leading-relaxed;
+}
+
+.markdown-content p {
+  @apply mb-4 last:mb-0;
+}
+
+.markdown-content h1 {
+  @apply text-2xl font-bold mb-4 mt-6 first:mt-0;
+}
+
+.markdown-content h2 {
+  @apply text-xl font-bold mb-3 mt-5;
+}
+
+.markdown-content h3 {
+  @apply text-lg font-bold mb-3 mt-4;
+}
+
+.markdown-content ul {
+  @apply mb-4 list-disc pl-6;
+}
+
+.markdown-content ol {
+  @apply mb-4 list-decimal pl-6;
+}
+
+.markdown-content li {
+  @apply mb-1;
+}
+
+.markdown-content blockquote {
+  @apply border-l-4 border-gray-300 pl-4 italic mb-4;
+}
+
+.markdown-content code:not(pre code) {
+  @apply px-1.5 py-0.5 rounded bg-gray-700 bg-opacity-20 font-mono text-sm;
+}
+
+.markdown-content pre {
+  @apply mb-4 rounded-lg overflow-hidden;
+}
+
+.markdown-content a {
+  @apply text-blue-500 hover:text-blue-600 underline;
+}
+
+.markdown-content img {
+  @apply max-w-full rounded-lg my-4;
+}
 body {
   margin: 0;
   font-family: Inter, system-ui, Avenir, Helvetica, Arial, sans-serif;

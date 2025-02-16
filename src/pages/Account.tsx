@@ -8,6 +8,7 @@ import { PersonalizationPanel } from '../components/account/PersonalizationPanel
 import { useSubscriptionStore } from '../store/subscription';
 import { useIntegrationsStore } from '../store/integrations';
 import { usePersonalizationStore } from '../store/personalization';
+import { useSettingsStore } from '../store/settings';
 import { useSearchParams } from 'react-router-dom';
 
 const TABS = [
@@ -22,24 +23,51 @@ export default function Account() {
   const [searchParams] = useSearchParams();
   const initialTab = searchParams.get('tab') || 'overview';
   const [activeTab, setActiveTab] = useState(initialTab);
-  const { fetchSubscription } = useSubscriptionStore();
-  const { fetchIntegrations } = useIntegrationsStore();
-  const { personalInfo, fetchPersonalInfo, updatePersonalInfo } = usePersonalizationStore();
+  const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  
+  const { fetchSubscription, loading: subLoading } = useSubscriptionStore();
+  const { fetchIntegrations, loading: intLoading } = useIntegrationsStore();
+  const { personalInfo, fetchPersonalInfo, updatePersonalInfo, loading: persLoading } = usePersonalizationStore();
+  const { fetchSettings, loading: settingsLoading } = useSettingsStore();
 
   useEffect(() => {
-    fetchSubscription();
-    fetchIntegrations();
-    fetchPersonalInfo();
+    const initializeData = async () => {
+      setError(null);
+      setLoading(true);
+      try {
+        await Promise.all([fetchSubscription(), fetchIntegrations(), fetchPersonalInfo(), fetchSettings()]);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load account data');
+        console.error('Error loading account data:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    initializeData();
   }, [fetchSubscription, fetchIntegrations, fetchPersonalInfo]);
 
   return (
-    <div className="min-h-screen bg-gray-100">
+    <div className="min-h-screen bg-background">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="py-8">
           <div className="mb-8">
             <h1 className="text-2xl font-bold text-gray-900">Account Settings</h1>
           </div>
 
+          {/* Error display */}
+          {error && (
+            <div className="mb-8 rounded-lg bg-red-50 p-4 text-red-700">
+              {error}
+            </div>
+          )}
+
+          {/* Loading state */}
+          {loading && (
+            <div className="flex justify-center py-8">
+              <div className="h-8 w-8 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
+            </div>
+          )}
           {/* Tabs */}
           <div className="mb-8 border-b border-gray-200">
             <nav className="-mb-px flex space-x-8">
@@ -61,7 +89,7 @@ export default function Account() {
           </div>
 
           {/* Tab Content */}
-          <div className="py-4">
+          {!loading && <div className="py-4">
             {activeTab === 'overview' && <AccountOverview />}
             {activeTab === 'subscription' && <SubscriptionPanel />}
             {activeTab === 'integrations' && <IntegrationsPanel />}
@@ -72,7 +100,7 @@ export default function Account() {
                 setPersonalInfo={updatePersonalInfo}
               />
             )}
-          </div>
+          </div>}
         </div>
       </div>
     </div>

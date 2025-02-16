@@ -20,6 +20,7 @@ export default function Chat() {
   const navigate = useNavigate();
   const { messages, loading, error, streamingMessageId, sendMessage, fetchMessages, fetchThreads, clearMessages } = useChatStore();
   const { contexts, activeContext, setActiveContext } = useContextStore();
+  const { loading: authLoading } = useAuthStore();
   const { isActive, hasSeenWelcome, togglePersonalization, setHasSeenWelcome } = usePersonalizationStore();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [showSettings, setShowSettings] = useState(false);
@@ -61,10 +62,10 @@ export default function Chat() {
 
     useEffect(() => {
         // Only set isInitializing to false when both auth and personalization data are loaded
-        if (!useAuthStore.getState().loading && hasSeenWelcome !== undefined) {
+        if (!authLoading && hasSeenWelcome !== undefined) {
             setIsInitializing(false);
         }
-    }, [hasSeenWelcome, useAuthStore.getState().loading]);
+    }, [hasSeenWelcome, authLoading]);
 
   const handleNewChat = () => {
     clearMessages();
@@ -220,9 +221,16 @@ export default function Chat() {
       {showSettings && <Settings onClose={() => setShowSettings(false)} />}
 
       {/* Welcome Dialog */}
-      {!hasSeenWelcome && (
+      {!hasSeenWelcome && !isInitializing && (
         <PersonalizationWelcome
-          onClose={() => setHasSeenWelcome(true)}
+          onClose={() => {
+            // The PersonalizationWelcome component now handles the database update
+            // We just need to handle any UI cleanup here
+            if (sendError === 'Failed to save personalization preference. Please try again.') {
+              setSendError(null);
+            }
+            console.log('Welcome dialog closed');
+          }}
         />
       )}
 

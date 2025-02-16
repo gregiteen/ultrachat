@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
-import { DESIGNER_THEMES } from '../lib/themes';
+import { DESIGNER_THEMES, applyTheme } from '../lib/themes';
 import type { Settings, Theme } from '../types';
 
 interface SettingsState {
@@ -40,6 +40,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
         .eq('user_id', user.id)
         .maybeSingle();
 
+      console.log("fetchSettings - Raw data:", data); // Log raw data
+
       if (error) {
         if (error.code === 'PGRST116') {
           // Settings don't exist yet, create with defaults
@@ -56,7 +58,12 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
           throw error;
         }
       } else if (data) {
-        set({ settings: data.settings });
+        const mergedSettings = { ...defaultSettings, ...data.settings };
+        // Apply theme immediately after loading
+        if (mergedSettings.theme) {
+          applyTheme(mergedSettings.theme);
+        }
+        set({ settings: mergedSettings });
       } else {
         // No settings found, create with defaults
         const { error: insertError } = await supabase
@@ -68,6 +75,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
         if (insertError) throw insertError;
         set({ settings: defaultSettings });
+        applyTheme(defaultSettings.theme);
       }
     } catch (error) {
       console.error('Error fetching settings:', error);
@@ -82,6 +90,8 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
+
+      console.log("updateSettings - New settings:", newSettings); // Log new settings
 
       const { error } = await supabase
         .from('user_settings')

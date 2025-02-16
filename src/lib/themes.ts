@@ -5,86 +5,85 @@ export const DESIGNER_THEMES: Theme[] = [
     id: 'modern',
     name: 'Modern',
     colors: {
-      background: '#ff0000', // Bright Red
-      foreground: '#0000ff', // Bright Blue
-      primary: '#00ff00', // Bright Green
-      secondary: '#ffff00', // Bright Yellow
-      accent: '#ff00ff', // Bright Magenta
-      muted: '#00ffff',     // Bright Cyan
-      mutedForeground: '#ffffff', // White
-      inputBackground: '#000000', // Black
-      buttonText: '#000000', // Black
-      iconColor: '#ff0000',
-      iconHover: '#00ff00'
+      background: '#ffffff',
+      foreground: '#1E293B',
+      primary: '#2563EB',
+      secondary: '#3B82F6',
+      accent: '#60A5FA',
+      muted: '#F8FAFC',
+      mutedForeground: '#64748B',
+      inputBackground: '#ffffff',
+      buttonText: '#ffffff',
+      iconColor: '#2563EB',
+      iconHover: '#1D4ED8'
     },
   },
   {
     id: 'midnight',
     name: 'Midnight',
     colors: {
-      background: '#0F172A',
+      background: '#0A0F1E',
       foreground: '#E2E8F0',
-      primary: '#8B5CF6',
-      secondary: '#EC4899',
-      accent: '#F0ABFC',
+      primary: '#6366F1',
+      secondary: '#818CF8',
+      accent: '#A5B4FC',
       muted: '#1E293B',
       mutedForeground: '#94A3B8',
       inputBackground: '#1E293B',
       buttonText: '#ffffff',
-      iconColor: '#8B5CF6',
-      iconHover: '#EC4899'
+      iconColor: '#6366F1',
+      iconHover: '#4F46E5'
     },
   },
-  // Keep other themes but update their accent colors to match
   {
     id: 'nature',
     name: 'Nature',
     colors: {
-      background: '#F8FAFC',
-      foreground: '#1E293B',
-      primary: '#8B5CF6',
-      secondary: '#EC4899',
-      accent: '#F0ABFC',
-      muted: '#F1F5F9',
-      mutedForeground: '#64748B',
+      background: '#F8FAF5',
+      foreground: '#1B4332',
+      primary: '#059669',
+      secondary: '#10B981',
+      accent: '#34D399',
+      muted: '#ECFDF5',
+      mutedForeground: '#4B5563',
       inputBackground: '#ffffff',
       buttonText: '#ffffff',
-      iconColor: '#8B5CF6',
-      iconHover: '#EC4899'
+      iconColor: '#059669',
+      iconHover: '#047857'
     },
   },
   {
     id: 'sunset',
     name: 'Sunset',
     colors: {
-      background: '#FFFBF5',
+      background: '#FEF2F2',
       foreground: '#1C1917',
-      primary: '#8B5CF6',
-      secondary: '#EC4899',
-      accent: '#F0ABFC',
-      muted: '#FEF3C7',
-      mutedForeground: '#78716C',
+      primary: '#DC2626',
+      secondary: '#EF4444',
+      accent: '#F87171',
+      muted: '#FEE2E2',
+      mutedForeground: '#6B7280',
       inputBackground: '#ffffff',
       buttonText: '#ffffff',
-      iconColor: '#8B5CF6',
-      iconHover: '#EC4899'
+      iconColor: '#DC2626',
+      iconHover: '#B91C1C'
     },
   },
   {
     id: 'ocean',
     name: 'Ocean',
     colors: {
-      background: '#F0F9FF',
+      background: '#ECFEFF',
       foreground: '#0C4A6E',
-      primary: '#8B5CF6',
-      secondary: '#EC4899',
-      accent: '#F0ABFC',
-      muted: '#E0F2FE',
-      mutedForeground: '#64748B',
+      primary: '#0891B2',
+      secondary: '#06B6D4',
+      accent: '#22D3EE',
+      muted: '#CFFAFE',
+      mutedForeground: '#475569',
       inputBackground: '#ffffff',
       buttonText: '#ffffff',
-      iconColor: '#8B5CF6',
-      iconHover: '#EC4899'
+      iconColor: '#0891B2',
+      iconHover: '#0E7490'
     },
   },
 ];

@@ -12,6 +12,8 @@ interface PersonalizationState {
   updatePersonalInfo: (info: PersonalInfo) => Promise<void>;
   togglePersonalization: () => Promise<void>;
   setHasSeenWelcome: (seen: boolean) => Promise<void>;
+  initialized: boolean;
+  setInitialized: (init: boolean) => void;
 }
 
 export const usePersonalizationStore = create<PersonalizationState>((set, get) => ({
@@ -20,6 +22,7 @@ export const usePersonalizationStore = create<PersonalizationState>((set, get) =
   hasSeenWelcome: false,
   loading: false,
   error: null,
+  initialized: false, // Start as false to ensure proper initialization
 
     fetchPersonalInfo: async () => {
     set({ loading: true, error: null });
@@ -73,6 +76,9 @@ export const usePersonalizationStore = create<PersonalizationState>((set, get) =
       set({ loading: false });
     }
   },
+    setInitialized: (init: boolean) => {
+        set({ initialized: init })
+    },
 
   updatePersonalInfo: async (info: PersonalInfo) => {
     set({ loading: true, error: null });
@@ -130,22 +136,36 @@ export const usePersonalizationStore = create<PersonalizationState>((set, get) =
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
 
+      // First get existing data to preserve other fields
+      const { data: existingData } = await supabase
+        .from('user_personalization')
+        .select('*')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
       const { error } = await supabase
         .from('user_personalization')
         .upsert({
           user_id: user.id,
           has_seen_welcome: seen,
-          updated_at: new Date().toISOString()
-        }, { onConflict: 'user_id' }); // Use upsert with onConflict
+          updated_at: new Date().toISOString(),
+          // Preserve existing data
+          personal_info: existingData?.personal_info || {},
+          is_active: existingData?.is_active || false,
+          // Add any other fields that should be preserved
+          ...existingData && { created_at: existingData.created_at }
+        }, { onConflict: 'user_id' });
 
       if (error) {
         console.error("Error updating has_seen_welcome in database:", error);
         throw error;
       }
 
+      // Only update state if database operation succeeded
       set({ hasSeenWelcome: seen });
-    } catch (error:any) {
+    } catch (error: any) {
       console.error('Error updating welcome state:', error);
+      set({ error: error instanceof Error ? error.message : 'An error occurred' });
     }
   }
 }));

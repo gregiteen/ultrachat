@@ -1,3 +1,4 @@
+import { usePersonalizationStore } from '../store/personalization';
 import { createClient } from '@supabase/supabase-js';
 import { useAuthStore } from '../store/auth';
 import type { Session } from '@supabase/supabase-js';
@@ -13,18 +14,33 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
-    detectSessionInUrl: true
+    detectSessionInUrl: false,
   }
 });
 
-export function onAuthStateChange(callback: (event: string, session: Session | null) => void): { unsubscribe: () => void } {
-     return supabase.auth.onAuthStateChange((event, session) => {
+export function onAuthStateChange(callback: (event: string | undefined, session: Session | null) => void): { unsubscribe: () => void; } {
+  console.log('Supabase URL:', supabaseUrl);
+  console.log('Supabase Anon Key:', supabaseAnonKey);
+  
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      console.log('Initial session:', session);
+      if (!session) {
+        useAuthStore.getState().setUser(null);
+      } else {
+        useAuthStore.getState().setUser(session.user);
+      }
+    });
+
+    return supabase.auth.onAuthStateChange((event: string | undefined, session) => {
         console.log("AUTH STATE CHANGE", event, session)
-        if (event === 'SIGNED_OUT') {
+        if (typeof event === 'string' && event === 'SIGNED_OUT') {
             useAuthStore.getState().setUser(null);
-        } else if (event === 'SIGNED_IN' || event === "TOKEN_REFRESHED") {
+            usePersonalizationStore.getState().setInitialized(false);
+            callback(event, session);
+        } else if (typeof event === 'string' && (event === 'SIGNED_IN' || event === "TOKEN_REFRESHED")) {
             useAuthStore.getState().setUser(session?.user ?? null);
+            usePersonalizationStore.getState().setInitialized(true);
+            callback(event, session);
         }
-        callback(event, session);
-     }).data.subscription;
+    }).data.subscription;
 }

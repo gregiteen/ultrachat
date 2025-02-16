@@ -16,6 +16,9 @@ interface ChatState {
   sendMessage: (content: string, files?: string[], contextId?: string) => Promise<void>;
   switchThread: (threadId: string) => Promise<void>;
   clearMessages: () => void;
+  renameThread: (threadId: string, title: string) => Promise<void>;
+  deleteThread: (threadId: string) => Promise<void>;
+  togglePinThread: (threadId: string) => Promise<void>;
   updateStreamingMessage: (content: string) => void;
 }
 
@@ -57,16 +60,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (!user) throw new Error('User not authenticated');
 
       const { data, error } = await supabase
-          .from('threads')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('updated_at', { ascending: false })
+        .from('threads')
+        .select('*')
+        .eq('user_id', user.id)
+        .is('deleted_at', null)
+        .order('updated_at', { ascending: false });
 
       if (error) throw error;
       console.log("Fetch Threads - Raw Data:", data);
 
-      // Handle potential null data
-      set({ threads: data || [] } as Partial<ChatState>);
+      // Sort threads with pinned ones first
+      const sortedThreads = [...(data || [])].sort((a, b) => {
+        return (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+      });
+
+      set({ threads: sortedThreads });
 
     } catch (error) {
       console.error('Error fetching threads:', error);
@@ -83,17 +91,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (!user) throw new Error('User not authenticated');
 
       const { data, error } = await supabase
-          .from('messages')
-          .select('*')
-          .eq('thread_id', threadId)
-          .order('created_at', { ascending: true })
+        .from('messages')
+        .select('*')
+        .eq('thread_id', threadId)
+        .order('created_at', { ascending: true });
 
-        console.log("Fetch Messages - Raw Data:", data); // Log raw data
-        console.log("Fetch Messages - Error:", error); // Log error
+      console.log("Fetch Messages - Raw Data:", data);
+      console.log("Fetch Messages - Error:", error);
       if (error) throw error;
 
-      // Handle potential null data
-      set({ messages: data || [], currentThreadId: threadId } as Partial<ChatState>);
+      set({ messages: data || [], currentThreadId: threadId });
 
     } catch (error) {
       console.error('Error fetching messages:', error);
@@ -113,11 +120,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
           ? { ...msg, content }
           : msg
       )
-    } as Partial<ChatState>);
+    });
   },
 
   sendMessage: async (content: string, files?: string[], contextId?: string) => {
-    set({ loading: true, error: null});
+    set({ loading: true, error: null });
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
@@ -135,11 +142,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
             title: 'New Conversation'
           })
           .select()
-          .single() as PostgrestSingleResponse<Thread>; // Explicit type
+          .single();
 
         if (threadError) throw threadError;
-        threadId = thread!.id; // Use definite assignment assertion
-        set({ currentThreadId: threadId } as Partial<ChatState>);
+        threadId = thread!.id;
+        set({ currentThreadId: threadId });
       }
 
       // Get context if provided
@@ -149,9 +156,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
           .from('contexts')
           .select('content')
           .eq('id', contextId)
-          .single() as { data: { content: string }, error: any }; // Explicit type
+          .single();
+
         if (contextError) {
-            console.error("Error fetching context:", contextError);
+          console.error("Error fetching context:", contextError);
         }
 
         if (context) {
@@ -169,70 +177,68 @@ export const useChatStore = create<ChatState>((set, get) => ({
         files: files || []
       };
 
-      console.log('Sending message:', messageData); // Log the data being sent
+      console.log('Sending message:', messageData);
 
       const { data: userMessage, error: userError } = await supabase
         .from('messages')
         .insert(messageData)
-        .select('*, files') // Explicitly select the 'files' column
-        .single() as PostgrestSingleResponse<Message>; // Explicit type
+        .select('*, files')
+        .single();
 
       if (userError) throw userError;
-      set({ messages: [...get().messages, userMessage!] } as Partial<ChatState>); // Add new message and use definite assignment
+      set({ messages: [...get().messages, userMessage!] });
 
-      // TODO: Handle AI response and streaming
-        const model = getChatModel();
+      // Handle AI response
+      const model = getChatModel();
 
-        let fileContent = '';
-        if (files && files.length > 0) {
-            for (const filePath of files) {
-                try {
-                    const { data: fileData, error: fileError } = await supabase.storage.from('user-uploads').download(filePath);
+      let fileContent = '';
+      if (files && files.length > 0) {
+        for (const filePath of files) {
+          try {
+            const { data: fileData, error: fileError } = await supabase.storage
+              .from('user-uploads')
+              .download(filePath);
 
-                    if (fileError) {
-                        console.error("Error downloading file:", fileError);
-                        continue; // Skip this file and continue with the next
-                    }
-                    if (!fileData) {
-                        console.error("File data is null:", filePath);
-                        continue;
-                    }
-
-                    const fileText = await fileData.text();
-
-                    // Basic file type check and content handling
-                    if (filePath.endsWith('.txt') || filePath.endsWith('.md') || filePath.endsWith('.csv') || filePath.endsWith('.json') || filePath.endsWith('.xml')) {
-                        fileContent += `\n\nContent of ${filePath}:\n${fileText.substring(0, 2000)}\n`;
-                    } else {
-                        fileContent += `\n\nUploaded file: ${filePath} (Type: ${fileData.type})\n`;
-                    }
-
-
-                }
-                catch (error) {
-                    console.error("Error processing file:", filePath, error);
-                }
+            if (fileError) {
+              console.error("Error downloading file:", fileError);
+              continue;
             }
+            if (!fileData) {
+              console.error("File data is null:", filePath);
+              continue;
+            }
+
+            const fileText = await fileData.text();
+
+            if (filePath.endsWith('.txt') || filePath.endsWith('.md') || filePath.endsWith('.csv') || filePath.endsWith('.json') || filePath.endsWith('.xml')) {
+              fileContent += `\n\nContent of ${filePath}:\n${fileText.substring(0, 2000)}\n`;
+            } else {
+              fileContent += `\n\nUploaded file: ${filePath} (Type: ${fileData.type})\n`;
+            }
+          } catch (error) {
+            console.error("Error processing file:", filePath, error);
+          }
         }
+      }
 
-        const chat = model.startChat({
-            history: [
-              {
-                role: "user",
-                parts: [{ text: "hi"}],
-              },
-              {
-                role: "model",
-                parts: [{ text: "hello, how can i help?"}],
-              },
-            ],
-          });
-          
-        const result = await chat.sendMessage(contextContent + content + fileContent);
-        const response = result.response.text();
-        console.log(response);
+      const chat = model.startChat({
+        history: [
+          {
+            role: "user",
+            parts: [{ text: "hi" }],
+          },
+          {
+            role: "model",
+            parts: [{ text: "hello, how can i help?" }],
+          },
+        ],
+      });
 
-        const { data: aiMessage, error: aiError } = await supabase
+      const result = await chat.sendMessage(contextContent + content + fileContent);
+      const response = result.response.text();
+      console.log(response);
+
+      const { data: aiMessage, error: aiError } = await supabase
         .from('messages')
         .insert({
           content: response,
@@ -243,16 +249,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
           files: []
         })
         .select()
-        .single() as PostgrestSingleResponse<Message>;
+        .single();
 
-        if (aiError) throw aiError;
-        set({ messages: [...get().messages, aiMessage!] } as Partial<ChatState>);
+      if (aiError) throw aiError;
+      set({ messages: [...get().messages, aiMessage!] });
 
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'An error occurred';
       console.error('Error in chat:', errorMessage);
       set({ error: errorMessage });
-      throw error; // Re-throw to be handled by caller
+      throw error;
     } finally {
       set({ loading: false });
     }
@@ -264,5 +270,79 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   clearMessages: () => {
     set({ messages: [], currentThreadId: null });
+  },
+
+  renameThread: async (threadId: string, title: string) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
+      const { error } = await supabase
+        .from('threads')
+        .update({ title })
+        .eq('id', threadId)
+        .eq('user_id', user.id);
+
+      if (error) throw error;
+
+      // Update local state
+      set({
+        threads: get().threads.map(thread =>
+          thread.id === threadId ? { ...thread, title } : thread
+        )
+      });
+    } catch (error) {
+      console.error('Error renaming thread:', error);
+      throw error;
+    }
+  },
+
+  deleteThread: async (threadId: string) => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
+      const { error } = await supabase
+        .from('threads')
+        .update({ deleted_at: new Date().toISOString() })
+        .eq('id', threadId)
+        .eq('user_id', user.id);
+
+      if (error) throw error;
+
+      // Update local state
+      set({
+        threads: get().threads.filter(thread => thread.id !== threadId)
+      });
+    } catch (error) {
+      console.error('Error deleting thread:', error);
+      throw error;
+    }
+  },
+
+  togglePinThread: async (threadId: string) => {
+    try {
+      const thread = get().threads.find(t => t.id === threadId);
+      if (!thread) throw new Error('Thread not found');
+
+      const { error } = await supabase
+        .from('threads')
+        .update({ pinned: !thread.pinned })
+        .eq('id', threadId);
+
+      if (error) throw error;
+
+      // Update local state and re-sort threads
+      const updatedThreads = get().threads.map(t =>
+        t.id === threadId ? { ...t, pinned: !t.pinned } : t
+      ).sort((a, b) => {
+        return (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
+      });
+
+      set({ threads: updatedThreads });
+    } catch (error) {
+      console.error('Error toggling thread pin:', error);
+      throw error;
+    }
   }
 }));
