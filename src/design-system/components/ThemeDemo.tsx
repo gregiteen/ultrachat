@@ -1,25 +1,61 @@
 import React from 'react';
 import { Button } from './base/Button';
 import { useTheme } from '../theme';
-import { Settings, Sun, Moon, Loader, Mail, Ghost, Link } from 'lucide-react';
+import { Settings, Sun, Moon, Mail, Ghost, Link, Palette } from 'lucide-react';
+import type { Theme } from '../theme/types';
+
+function ThemeButton({ theme, isSelected, onClick }: { 
+  theme: Theme; 
+  isSelected: boolean; 
+  onClick: () => void;
+}) {
+  return (
+    <Button
+      style={{
+        backgroundColor: theme.colors.background,
+        color: theme.colors.foreground,
+        borderColor: isSelected ? theme.colors.primary : theme.colors.muted,
+      }}
+      size="sm"
+      onClick={onClick}
+      className={`relative ${isSelected ? 'ring-2 ring-offset-2' : ''}`}
+    >
+      <div className="flex items-center gap-2">
+        <div className="flex gap-1">
+          <div
+            className="h-3 w-3 rounded-full"
+            style={{ background: theme.colors.primary }}
+          />
+          <div
+            className="h-3 w-3 rounded-full"
+            style={{ background: theme.colors.secondary }}
+          />
+          <div
+            className="h-3 w-3 rounded-full"
+            style={{ background: theme.colors.accent }}
+          />
+        </div>
+        {theme.name}
+      </div>
+    </Button>
+  );
+}
 
 export function ThemeDemo() {
-  const { theme, setTheme, themes, systemTheme } = useTheme();
+  const { theme, setTheme, allThemes, systemTheme } = useTheme();
 
   return (
     <div className="p-6 space-y-8">
       <div className="space-y-4">
         <h2 className="text-2xl font-semibold">Theme Selection</h2>
         <div className="flex flex-wrap gap-2">
-          {themes.map((t) => (
-            <Button
+          {allThemes.map((t) => (
+            <ThemeButton
               key={t.id}
-              variant={theme.id === t.id ? 'primary' : 'ghost'}
-              size="sm"
+              theme={t}
+              isSelected={theme.id === t.id}
               onClick={() => setTheme(t)}
-            >
-              {t.name}
-            </Button>
+            />
           ))}
           <Button
             variant={theme.id === systemTheme.id ? 'primary' : 'ghost'}
@@ -70,21 +106,78 @@ export function ThemeDemo() {
 
       <div className="space-y-4">
         <h2 className="text-2xl font-semibold">Theme Preview</h2>
-        <div className="grid gap-4 p-4 rounded-lg bg-muted">
-          <div className="space-y-2">
-            <p className="text-sm text-muted-foreground">Background: {theme.colors.background}</p>
-            <p className="text-sm text-muted-foreground">Foreground: {theme.colors.foreground}</p>
-            <p className="text-sm text-muted-foreground">Primary: {theme.colors.primary}</p>
-            <p className="text-sm text-muted-foreground">Secondary: {theme.colors.secondary}</p>
-            <p className="text-sm text-muted-foreground">Accent: {theme.colors.accent}</p>
+        <div className="grid gap-6 p-6 rounded-lg border border-muted">
+          {/* Color Swatches */}
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+            {(Object.entries(theme.colors) as Array<[keyof Theme['colors'], string]>).map(([key, value]) => (
+              <div key={key} className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <div
+                    className="h-8 w-8 rounded-md border border-muted"
+                    style={{ backgroundColor: value }}
+                  />
+                  <div>
+                    <p className="text-sm font-medium">{key}</p>
+                    <p className="text-xs text-muted-foreground">{value}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
-          <div className="space-y-2">
-            <p className="text-xs">Font Size XS</p>
-            <p className="text-sm">Font Size SM</p>
-            <p className="text-base">Font Size Base</p>
-            <p className="text-lg">Font Size LG</p>
-            <p className="text-xl">Font Size XL</p>
-            <p className="text-2xl">Font Size 2XL</p>
+          
+          {/* Typography Preview */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold">Typography</h3>
+            <div className="grid gap-4">
+              <div className="space-y-1">
+                <p className="text-2xl font-bold">Heading 1</p>
+                <p className="text-xl font-semibold">Heading 2</p>
+                <p className="text-lg font-medium">Heading 3</p>
+              </div>
+              <div className="space-y-2">
+                <p className="text-base">
+                  Body text with <strong>bold</strong>, <em>italic</em>, and{' '}
+                  <a href="#" className="text-primary hover:text-secondary underline">
+                    links
+                  </a>
+                  .
+                </p>
+                <p className="text-sm text-muted-foreground">
+                  Secondary text in a muted color.
+                </p>
+              </div>
+            </div>
+          </div>
+          
+          {/* Component Preview */}
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold">Components</h3>
+            <div className="flex flex-wrap gap-4">
+              <div className="space-y-2">
+                <input
+                  type="text"
+                  placeholder="Input field"
+                  className="rounded-md border border-muted bg-input-background px-3 py-2"
+                />
+              </div>
+              <div className="space-y-2">
+                <select className="rounded-md border border-muted bg-input-background px-3 py-2">
+                  <option>Select option</option>
+                </select>
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <input type="checkbox" id="check" className="rounded border-muted" />
+                  <label htmlFor="check" className="text-sm">Checkbox</label>
+                </div>
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <input type="radio" id="radio" name="radio" className="border-muted" />
+                  <label htmlFor="radio" className="text-sm">Radio</label>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>

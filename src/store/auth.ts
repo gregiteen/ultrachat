@@ -1,11 +1,14 @@
 import { create } from 'zustand';
 import { User } from '../types';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../lib/supabase-client';
 import { usePersonalizationStore } from './personalization';
 
 interface AuthState {
   user: User | null;
+  initialized: boolean;
+  setInitialized: (value: boolean) => void;
   loading: boolean;
+  setLoading: (value: boolean) => void;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
   signOut: (onSuccess?: () => void) => Promise<void>;
@@ -13,21 +16,12 @@ interface AuthState {
 }
 
 export const useAuthStore = create<AuthState>((set) => {
-  // Initialize auth state
-  supabase.auth.getSession().then(({ data: { session } }) => {
-    if (session) {
-      set({
-        user: session.user as User,
-        loading: false
-      });
-    } else {
-      set({ loading: false });
-    }
-  });
-  
-  return ({
-  user: null,
-  loading: true,
+  return {
+    initialized: false,
+    setInitialized: (value: boolean) => set({ initialized: value }),
+    user: null,
+    loading: true,
+    setLoading: (value: boolean) => set({ loading: value }),
   signIn: async (email: string, password: string) => {
     set({ loading: true });
     try {
@@ -36,6 +30,8 @@ export const useAuthStore = create<AuthState>((set) => {
         password,
       });
       if (error) throw error;
+      const { data: { user } } = await supabase.auth.getUser();
+      set({ user: user as User });
     } finally {
       set({ loading: false });
     }
@@ -76,5 +72,5 @@ export const useAuthStore = create<AuthState>((set) => {
     }
   },
   setUser: (user) => set({ user, loading: false }),
-  });
+  };
 });

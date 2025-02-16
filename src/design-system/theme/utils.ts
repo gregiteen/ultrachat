@@ -97,11 +97,18 @@ export function applyTheme(theme: Theme): void {
   window.dispatchEvent(new CustomEvent('themechange', { detail: theme }));
 }
 
+let customThemes: Theme[] = [];
+
+export function setCustomThemes(themes: Theme[]) {
+  customThemes = themes;
+}
+
 /**
  * Gets a theme by ID
  */
 export function getThemeById(id: string): Theme | undefined {
-  return themes.find(theme => theme.id === id);
+  return themes.find(theme => theme.id === id) || 
+         customThemes.find(theme => theme.id === id);
 }
 
 /**

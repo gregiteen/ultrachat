@@ -1,120 +1,93 @@
-import React, { useLayoutEffect } from 'react';
-import { Link, useLocation, useNavigate, Outlet } from 'react-router-dom';
-import { MessageSquare, Inbox, CheckSquare, Settings, LogOut } from 'lucide-react';
+import React from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { MessageSquare, Inbox, CheckSquare, User, LogOut } from 'lucide-react';
 import { useAuthStore } from '../store/auth';
-import { useSettingsStore } from '../store/settings';
-import { applyTheme, removeTheme } from '../lib/themes';
+import { usePersonalizationStore } from '../store/personalization';
 
-export function AppLayout() {
-  const { signOut } = useAuthStore();
+interface NavItemProps {
+  to: string;
+  icon: React.ReactNode;
+  label: string;
+  isActive: boolean;
+}
+
+const NavItem = ({ to, icon, label, isActive }: NavItemProps) => (
+  <Link
+    to={to}
+    className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
+      isActive
+        ? 'bg-primary text-button-text'
+        : 'text-foreground hover:bg-muted/50'
+    }`}
+  >
+    {icon}
+    <span>{label}</span>
+  </Link>
+);
+
+export default function AppLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { settings } = useSettingsStore();
+  const { user, signOut } = useAuthStore();
+  const { fetchPersonalInfo } = usePersonalizationStore();
 
-  useLayoutEffect(() => {
-    if (settings?.theme && location.pathname !== '/' && location.pathname !== '/auth') {
-      console.log("AppLayout.tsx - Applying theme:", settings.theme);
-      applyTheme(settings.theme);
+  React.useEffect(() => {
+    if (user) {
+      fetchPersonalInfo();
     }
-    return () => {
-      console.log("AppLayout.tsx - Removing theme");
-      removeTheme();
-    }
-  }, [settings, location.pathname]);
+  }, [user, fetchPersonalInfo]);
 
-  const isActive = (path: string) => location.pathname === path;
+  if (!user) {
+    return <>{children}</>;
+  }
 
   const handleSignOut = async () => {
-    await signOut(() => {
-      navigate('/auth');
-    });
+    await signOut(() => navigate('/'));
   };
 
   return (
-    <div className="min-h-screen bg-white">
-      {/* Navigation */}
-      <nav className="fixed top-0 left-0 right-0 z-50 bg-white border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16">
-            <div className="flex items-center">
-              <Link to="/" className="flex items-center">
-                <img src="https://imgur.com/EJ0T2co.png" alt="UltraChat" className="h-12 w-auto" />
-              </Link>
-            </div>
-
-            <div className="flex items-center gap-6">
-              <Link
+    <div className="min-h-screen bg-background">
+      <nav className="fixed top-0 left-0 right-0 h-16 bg-background border-b border-muted z-50">
+        <div className="h-full px-4 flex items-center justify-between">
+          <div className="flex items-center gap-8">
+            <img src="https://imgur.com/EJ0T2co.png" alt="UltraChat" className="h-8 w-auto" />
+            <div className="flex items-center gap-2">
+              <NavItem
                 to="/chat"
-                className={`text-sm font-medium transition-colors text-gray-600 hover:text-gray-900 ${
-                  isActive('/chat')
-                    ? 'text-primary'
-                    : 'text-foreground hover:text-primary'
-                }`}
-              >
-                <span className="flex items-center gap-2">
-                  <MessageSquare className="h-4 w-4" />
-                  Chat
-                </span>
-              </Link>
-              <Link
+                icon={<MessageSquare className="h-5 w-5" />}
+                label="Chat"
+                isActive={location.pathname === '/chat'}
+              />
+              <NavItem
                 to="/inbox"
-                className={`text-sm font-medium transition-colors text-gray-600 hover:text-gray-900 ${
-                  isActive('/inbox')
-                    ? 'text-primary'
-                    : 'text-foreground hover:text-primary'
-                }`}
-              >
-                <span className="flex items-center gap-2">
-                  <Inbox className="h-4 w-4" />
-                  Inbox
-                </span>
-              </Link>
-              <Link
+                icon={<Inbox className="h-5 w-5" />}
+                label="Inbox"
+                isActive={location.pathname === '/inbox'}
+              />
+              <NavItem
                 to="/tasks"
-                className={`text-sm font-medium transition-colors text-gray-600 hover:text-gray-900 ${
-                  isActive('/tasks')
-                    ? 'text-primary'
-                    : 'text-foreground hover:text-primary'
-                }`}
-              >
-                <span className="flex items-center gap-2">
-                  <CheckSquare className="h-4 w-4" />
-                  Tasks
-                </span>
-              </Link>
-              <Link
+                icon={<CheckSquare className="h-5 w-5" />}
+                label="Tasks"
+                isActive={location.pathname === '/tasks'}
+              />
+              <NavItem
                 to="/account"
-                className={`text-sm font-medium transition-colors text-gray-600 hover:text-gray-900 ${
-                  isActive('/account')
-                    ? 'text-primary'
-                    : 'text-foreground hover:text-primary'
-                }`}
-              >
-                <span className="flex items-center gap-2">
-                  <Settings className="h-4 w-4" />
-                  Account
-                </span>
-              </Link>
-              <button
-                onClick={handleSignOut}
-                className="flex items-center gap-2 text-sm font-medium text-gray-600 hover:text-gray-900 transition-colors"
-              >
-                <LogOut className="h-4 w-4" />
-                Sign Out
-              </button>
+                icon={<User className="h-5 w-5" />}
+                label="Account"
+                isActive={location.pathname === '/account'}
+              />
             </div>
           </div>
+          <button
+            onClick={handleSignOut}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg text-foreground hover:bg-muted/50 transition-colors"
+          >
+            <LogOut className="h-5 w-5" />
+            <span>Sign out</span>
+          </button>
         </div>
       </nav>
-
-      {/* Main Content */}
-      <main className="pt-16">
-        {location.pathname !== '/' && location.pathname !== '/auth' ? (
-          <div className="theme-applied bg-background"><Outlet /></div>
-        ) : (
-          <Outlet />
-        )}
-      </main>
+      <main className="pt-16">{children}</main>
     </div>
   );
 }

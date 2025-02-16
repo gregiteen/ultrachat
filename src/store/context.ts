@@ -1,29 +1,23 @@
 import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
 import type { Context } from '../types';
+import { createQuery } from '../lib/db';
 
 interface ContextState {
   contexts: Context[];
   activeContext: Context | null;
-  defaultContext: Context | null;
   loading: boolean;
   error: string | null;
   fetchContexts: () => Promise<void>;
-  createContext: (name: string, content: string, files?: string[]) => Promise<void>;
-  updateContext: (id: string, updates: Partial<Context> & { files?: string[] }) => Promise<void>;
+  createContext: (name: string, content: string) => Promise<void>;
+  updateContext: (id: string, updates: Partial<Context>) => Promise<void>;
   deleteContext: (id: string) => Promise<void>;
-  setActiveContext: (context: Context | null) => Promise<void>;
-  setDefaultContext: (context: Context | null) => Promise<void>;
-}
-
-interface UserSettings {
-  active_context_id: string | null;
+  setActiveContext: (context: Context | null) => void;
 }
 
 export const useContextStore = create<ContextState>((set, get) => ({
   contexts: [],
   activeContext: null,
-  defaultContext: null,
   loading: false,
   error: null,
 
@@ -33,146 +27,99 @@ export const useContextStore = create<ContextState>((set, get) => ({
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
 
-      // Fetch contexts and active context state
-      const [contextsResponse, activeContextResponse] = await Promise.all([
-        supabase
-          .from('contexts')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('created_at', { ascending: false }),
-        supabase
-          .from('user_settings')
-          .select('active_context_id')
-          .eq('user_id', user.id)
-          .single()
-      ]);
+      const result = await createQuery<Context>(supabase, 'contexts')
+        .select('*')
+        .eq('user_id', user.id)
+        .order('created_at', { ascending: true })
+        .execute();
 
-      if (contextsResponse.error) throw contextsResponse.error;
-      
-      const contexts = contextsResponse.data || [];
-      const activeContextId = activeContextResponse.data?.active_context_id;
-      
-      // Find active and default contexts
-      const activeContext = contexts.find(c => c.id === activeContextId);
-      const defaultContext = contexts.find(c => c.is_default);
-      
-      // Use active context from settings, or default context, or first context
-      const effectiveActiveContext = activeContext || defaultContext || contexts[0] || null;
-      
-      set({ 
-        contexts,
-        activeContext: effectiveActiveContext,
-        defaultContext: defaultContext || null
-      });
+      if (result.error) throw result.error;
 
-      // If no contexts exist, create the personalization context
-      if (contexts.length === 0) {
-        const { data: personalContext, error: createError } = await supabase
-          .from('contexts')
-          .insert([{
-            user_id: user.id,
-            name: 'Personalize',
-            ai_name: 'Personal Assistant',
-            content: 'I am your personal assistant, focused on understanding and supporting you through our conversations.',
-            voice: 'warm, friendly voice',
-            is_active: true,
-            is_default: true,
-            personalization_document: 'Your personalization document will be automatically generated and maintained as you provide information.'
-          }])
-          .select()
-          .single();
+      const contexts = result.data as Context[];
+      set({ contexts });
 
-        if (createError) throw createError;
-
-        if (personalContext) {
-          set(state => ({
-            contexts: [personalContext],
-            activeContext: personalContext,
-            defaultContext: personalContext
-          }));
-
-          // Set as active context in user settings
-          await supabase
-            .from('user_settings')
-            .upsert({
-              user_id: user.id,
-              active_context_id: personalContext.id
-            });
-        }
+      // Set first context as active if none is selected
+      if (!get().activeContext && contexts.length > 0) {
+        set({ activeContext: contexts[0] });
       }
     } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'An error occurred' });
+      console.error('Error fetching contexts:', error);
+      set({ error: error instanceof Error ? error.message : 'Failed to fetch contexts' });
     } finally {
       set({ loading: false });
     }
   },
 
-  createContext: async (name: string, content: string, files?: string[]) => {
+  createContext: async (name: string, content: string) => {
     set({ loading: true, error: null });
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
 
-      const { data, error } = await supabase
-        .from('contexts')
-        .insert([{
-          name,
-          content,
-          user_id: user.id,
-          files: files || [],
-          is_active: true
-        }])
-        .select()
-        .single();
+      const newContext: Partial<Context> = {
+        name,
+        ai_name: name,
+        content,
+        user_id: user.id,
+        voice: {
+          name: 'Default Voice',
+          settings: {
+            stability: 0.75,
+            similarity_boost: 0.75
+          }
+        }
+      };
 
-      if (error) throw error;
+      const result = await createQuery<Context>(supabase, 'contexts')
+        .insert(newContext)
+        .select('*')
+        .single()
+        .execute();
 
-      // Update active context in user settings
-      await supabase
-        .from('user_settings')
-        .upsert({
-          user_id: user.id,
-          active_context_id: data.id
-        });
+      if (result.error) throw result.error;
 
-      set((state) => ({
-        contexts: [data, ...state.contexts],
-        activeContext: data
-      }));
+      const contexts = [...get().contexts, result.data as Context];
+      set({ contexts });
     } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'An error occurred' });
+      console.error('Error creating context:', error);
+      set({ error: error instanceof Error ? error.message : 'Failed to create context' });
+      throw error;
     } finally {
       set({ loading: false });
     }
   },
 
-  updateContext: async (id: string, updates: Partial<Context> & { files?: string[] }) => {
+  updateContext: async (id: string, updates: Partial<Context>) => {
     set({ loading: true, error: null });
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
 
-      const { data, error } = await supabase
-        .from('contexts')
-        .update({
-          ...updates,
-          files: updates.files || [],
-          updated_at: new Date().toISOString()
-        })
+      const result = await createQuery<Context>(supabase, 'contexts')
+        .update(updates)
         .eq('id', id)
         .eq('user_id', user.id)
-        .select()
-        .single();
+        .select('*')
+        .single()
+        .execute();
 
-      if (error) throw error;
+      if (result.error) throw result.error;
 
-      set((state) => ({
-        contexts: state.contexts.map((c) => (c.id === id ? data : c)),
-        activeContext: state.activeContext?.id === id ? data : state.activeContext,
-        defaultContext: updates.is_default ? data : (state.defaultContext?.id === id ? null : state.defaultContext)
-      }));
+      const updatedContext = result.data as Context;
+      const contexts = get().contexts.map(context =>
+        context.id === id ? updatedContext : context
+      );
+
+      set({ contexts });
+
+      // Update active context if it was the one modified
+      if (get().activeContext?.id === id) {
+        set({ activeContext: updatedContext });
+      }
     } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'An error occurred' });
+      console.error('Error updating context:', error);
+      set({ error: error instanceof Error ? error.message : 'Failed to update context' });
+      throw error;
     } finally {
       set({ loading: false });
     }
@@ -184,97 +131,31 @@ export const useContextStore = create<ContextState>((set, get) => ({
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
 
-      // Get context files before deletion
-      const { data: context } = await supabase
-        .from('contexts')
-        .select('files')
-        .eq('id', id)
-        .single();
-
-      // Delete files from storage if they exist
-      if (context?.files?.length) {
-        const filePaths = context.files.map((fileName: string) => `${user.id}/files/${fileName}`);
-        try {
-          await supabase.storage
-            .from('context-files')
-            .remove(filePaths);
-        } catch (error) {
-          console.error('Error deleting files:', error);
-        }
-      }
-
-      const { error } = await supabase
-        .from('contexts')
+      const result = await createQuery<Context>(supabase, 'contexts')
         .delete()
         .eq('id', id)
-        .eq('user_id', user.id);
+        .eq('user_id', user.id)
+        .execute();
 
-      if (error) throw error;
+      if (result.error) throw result.error;
 
-      set((state) => {
-        const remainingContexts = state.contexts.filter((c) => c.id !== id);
-        const wasActive = state.activeContext?.id === id;
-        
-        // If we deleted the active context, set the first available as active
-        const newActiveContext = wasActive ? (remainingContexts[0] || null) : state.activeContext;
+      const contexts = get().contexts.filter(context => context.id !== id);
+      set({ contexts });
 
-        // Update active context in user settings if needed
-        if (wasActive && newActiveContext) {
-          (async () => {
-            try {
-              await supabase
-                .from('user_settings')
-                .upsert({
-                  user_id: user.id,
-                  active_context_id: newActiveContext.id
-                });
-              console.log('Active context updated in settings after deletion');
-            } catch (error) {
-              console.error('Error updating active context:', error);
-            }
-          })();
-        }
-
-        return {
-          contexts: remainingContexts,
-          activeContext: newActiveContext,
-          defaultContext: null
-        };
-      });
+      // Clear active context if it was the one deleted
+      if (get().activeContext?.id === id) {
+        set({ activeContext: contexts[0] || null });
+      }
     } catch (error) {
-      set({ error: error instanceof Error ? error.message : 'An error occurred' });
+      console.error('Error deleting context:', error);
+      set({ error: error instanceof Error ? error.message : 'Failed to delete context' });
+      throw error;
     } finally {
       set({ loading: false });
     }
   },
 
-  setActiveContext: async (context) => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('User not authenticated');
-
-      // Update active context in user settings
-      await supabase
-        .from('user_settings')
-        .upsert({
-          user_id: user.id,
-          active_context_id: context?.id || null
-        });
-
-      set({ activeContext: context });
-    } catch (error) {
-      console.error('Error setting active context:', error);
-    }
-  },
-
-  setDefaultContext: async (context) => {
-    if (!context) return;
-    
-    try {
-      await get().updateContext(context.id, { is_default: true });
-      set({ defaultContext: context });
-    } catch (error) {
-      console.error('Error setting default context:', error);
-    }
-  },
+  setActiveContext: (context: Context | null) => {
+    set({ activeContext: context });
+  }
 }));

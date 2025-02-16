@@ -1,30 +1,41 @@
 import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
 import type { PersonalInfo } from '../types';
+import { AIPersonalizationService } from '../lib/ai-personalization';
+import { processPersonalInfo } from '../lib/utils';
 
 interface PersonalizationState {
   personalInfo: PersonalInfo;
-  isActive: boolean;
-  hasSeenWelcome: boolean;
   loading: boolean;
   error: string | null;
+  isActive: boolean;
+  hasSeenWelcome: boolean;
+  snoozedForSession: boolean;
+  initialized: boolean;
+  init: () => Promise<void>;
   fetchPersonalInfo: () => Promise<void>;
   updatePersonalInfo: (info: PersonalInfo) => Promise<void>;
   togglePersonalization: () => Promise<void>;
   setHasSeenWelcome: (seen: boolean) => Promise<void>;
-  initialized: boolean;
   setInitialized: (init: boolean) => void;
 }
 
 export const usePersonalizationStore = create<PersonalizationState>((set, get) => ({
   personalInfo: {},
-  isActive: false,
-  hasSeenWelcome: false,
   loading: false,
   error: null,
-  initialized: false, // Start as false to ensure proper initialization
+  isActive: false,
+  hasSeenWelcome: false,
+  snoozedForSession: false,
+  initialized: false,
 
-    fetchPersonalInfo: async () => {
+  init: async () => {
+    if (!get().initialized) {
+      await get().fetchPersonalInfo();
+    }
+  },
+
+  fetchPersonalInfo: async () => {
     set({ loading: true, error: null });
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -34,138 +45,137 @@ export const usePersonalizationStore = create<PersonalizationState>((set, get) =
         .from('user_personalization')
         .select('personal_info, is_active, has_seen_welcome')
         .eq('user_id', user.id)
-        .maybeSingle(); // Use maybeSingle instead of single
+        .maybeSingle();
 
       if (error) throw error;
-      console.log("Fetched personalization data:", data);
 
       if (!data) {
-        console.log("No personalization data found, creating default entry.");
         const { error: insertError } = await supabase
           .from('user_personalization')
-          .upsert({
+          .insert({
             user_id: user.id,
             personal_info: {},
             is_active: false,
-            has_seen_welcome: false,
-          }, { onConflict: 'user_id' }); // Use upsert with onConflict
+            has_seen_welcome: false
+          });
 
         if (insertError) throw insertError;
-
-        // Fetch again after inserting
-        ({ data, error } = await supabase
-          .from('user_personalization')
-          .select('personal_info, is_active, has_seen_welcome')
-          .eq('user_id', user.id)
-          .maybeSingle()); // Use maybeSingle
-
-        if (error) throw error;
-        if (!data) throw new Error("Failed to fetch data after creating default entry.");
+        data = { personal_info: {}, is_active: false, has_seen_welcome: false };
       }
-
 
       set({
         personalInfo: data.personal_info || {},
-        isActive: data.is_active || false,
-        hasSeenWelcome: data.has_seen_welcome || false
+        isActive: data.is_active,
+        hasSeenWelcome: data.has_seen_welcome,
+        initialized: true
       });
-    } catch (error:any) {
+    } catch (error: any) {
       console.error('Error fetching personal info:', error);
-      set({ error: error instanceof Error ? error.message : 'An error occurred' });
+      set({ error: error.message });
     } finally {
       set({ loading: false });
     }
   },
-    setInitialized: (init: boolean) => {
-        set({ initialized: init })
-    },
 
   updatePersonalInfo: async (info: PersonalInfo) => {
+    const currentInfo = get().personalInfo;
+    // Update local state immediately for responsive UI
+    set({ personalInfo: { ...currentInfo, ...info } });
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
+      // Process arrays and update database
+      const processedInfo = processPersonalInfo({ ...currentInfo, ...info });
+      const { error: updateError } = await supabase
+        .from('user_personalization')
+        .update({
+          personal_info: processedInfo,
+          updated_at: new Date().toISOString()
+        })
+        .eq('user_id', user.id);
+
+      if (updateError) {
+        // Revert on error
+        set({ personalInfo: currentInfo });
+        throw updateError;
+      }
+    } catch (error: any) {
+      console.error('Error updating personal info:', error);
+      set({ error: error.message });
+    }
+  },
+
+  togglePersonalization: async () => {
     set({ loading: true, error: null });
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
 
+      const newIsActive = !get().isActive;
+
+      // Update existing row
       const { error } = await supabase
         .from('user_personalization')
-        .upsert({
-          user_id: user.id,
-          personal_info: info,
+        .update({
+          is_active: newIsActive,
           updated_at: new Date().toISOString()
-        });
+        })
+        .eq('user_id', user.id);
 
       if (error) throw error;
 
-      set({ personalInfo: info });
-    } catch (error:any) {
-      console.error('Error updating personal info:', error);
-      set({ error: error instanceof Error ? error.message : 'An error occurred' });
+      set({ isActive: newIsActive });
+    } catch (error: any) {
+      console.error('Error toggling personalization:', error);
+      set({ error: error.message });
     } finally {
       set({ loading: false });
     }
   },
 
-  togglePersonalization: async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('User not authenticated');
-
-      const newIsActive = !get().isActive;
-      set({ isActive: newIsActive });
-
-      // Update in database
-      await supabase
-        .from('user_personalization')
-        .upsert({
-          user_id: user.id,
-          is_active: newIsActive,
-          updated_at: new Date().toISOString()
-        });
-
-      console.log('Personalization state updated');
-    } catch (error:any) {
-      console.error('Error toggling personalization:', error);
-      // Revert state if update failed
-      set({ isActive: !get().isActive });
-    }
-  },
-
   setHasSeenWelcome: async (seen: boolean) => {
-    console.log("Setting hasSeenWelcome to:", seen);
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
-
-      // First get existing data to preserve other fields
-      const { data: existingData } = await supabase
-        .from('user_personalization')
-        .select('*')
-        .eq('user_id', user.id)
-        .maybeSingle();
 
       const { error } = await supabase
         .from('user_personalization')
-        .upsert({
-          user_id: user.id,
+        .update({
           has_seen_welcome: seen,
-          updated_at: new Date().toISOString(),
-          // Preserve existing data
-          personal_info: existingData?.personal_info || {},
-          is_active: existingData?.is_active || false,
-          // Add any other fields that should be preserved
-          ...existingData && { created_at: existingData.created_at }
-        }, { onConflict: 'user_id' });
+          updated_at: new Date().toISOString()
+        })
+        .eq('user_id', user.id);
 
-      if (error) {
-        console.error("Error updating has_seen_welcome in database:", error);
-        throw error;
-      }
+      if (error) throw error;
 
-      // Only update state if database operation succeeded
-      set({ hasSeenWelcome: seen });
+      // Check if there's personalization data
+      const state = get();
+      const hasData = !!(
+        state.personalInfo.name || 
+        state.personalInfo.email || 
+        state.personalInfo.phone ||
+        (state.personalInfo.interests && state.personalInfo.interests.length > 0) ||
+        state.personalInfo.backstory || 
+        state.personalInfo.projects || 
+        state.personalInfo.resume
+      );
+
+      set({
+        hasSeenWelcome: seen && hasData,
+        snoozedForSession: !seen || !hasData
+      });
     } catch (error: any) {
-      console.error('Error updating welcome state:', error);
-      set({ error: error instanceof Error ? error.message : 'An error occurred' });
+      console.error('Error updating welcome status:', error);
+      throw new Error('Failed to update welcome status. Please try again.');
     }
+  },
+
+  setInitialized: (init: boolean) => {
+    set({ initialized: init });
   }
 }));
+
+// Initialize store on import
+usePersonalizationStore.getState().init();

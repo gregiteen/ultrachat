@@ -22,6 +22,32 @@ export default defineConfig({
     port: 8081,
     host: true,
     strictPort: true,
+    proxy: {
+      '/api/google': {
+        target: 'https://www.googleapis.com/customsearch/v1',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/google/, ''),
+        headers: {
+          'Origin': 'http://localhost:8081'
+        }
+      },
+      '/api/brave': {
+        target: 'https://api.search.brave.com/res/v1',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/brave/, ''),
+        headers: {
+          'Origin': 'http://localhost:8081'
+        }
+      },
+      '/gemini': {
+        target: 'https://generativelanguage.googleapis.com',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/gemini/, ''),
+        headers: {
+          'Origin': 'http://localhost:8081'
+        }
+      }
+    }
   },
   preview: {
     port: 8081,

@@ -1,6 +1,6 @@
 import type { Theme } from './types';
 
-const baseTheme = {
+export const baseTheme = {
   spacing: {
     xs: '0.25rem',
     sm: '0.5rem',
@@ -102,15 +102,15 @@ export const themes: Theme[] = [
     colors: {
       background: '#18181B',
       foreground: '#FAFAFA',
-      primary: '#3B82F6',
-      secondary: '#6366F1',
-      accent: '#8B5CF6',
+      primary: '#60A5FA',
+      secondary: '#818CF8',
+      accent: '#A78BFA',
       muted: '#27272A',
       mutedForeground: '#A1A1AA',
       inputBackground: '#27272A',
-      buttonText: '#FFFFFF',
-      iconColor: '#3B82F6',
-      iconHover: '#2563EB'
+      buttonText: '#18181B',
+      iconColor: '#60A5FA',
+      iconHover: '#3B82F6'
     }
   },
   {

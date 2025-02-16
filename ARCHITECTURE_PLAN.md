@@ -70,6 +70,16 @@
    - Performance metrics
    - Prompt templates with variables
 
+3. **Search Integration**
+    - Perplexity-style search system
+      - Search mode toggle
+      - Automatic search detection
+      - Source citations
+      - Follow-up questions
+    - Multi-provider support
+      - Brave Search API
+      - Future: Google/Bing integration
+
 3. **Automation Storage**
    - Save successful chain compositions
    - Export/import functionality

@@ -75,6 +75,7 @@ export interface ThemeBorderRadius {
 export interface Theme {
   id: string;
   name: string;
+  isCustom?: boolean;
   colors: ThemeColors;
   spacing: ThemeSpacing;
   typography: ThemeTypography;

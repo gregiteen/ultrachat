@@ -22,7 +22,7 @@ export default function Chat() {
   const { fetchThreads } = useThreadStore();
   const { contexts, activeContext, setActiveContext } = useContextStore();
   const { loading: authLoading } = useAuthStore();
-  const { isActive, hasSeenWelcome, togglePersonalization } = usePersonalizationStore();
+  const { isActive, hasSeenWelcome, snoozedForSession, togglePersonalization, personalInfo, setHasSeenWelcome, initialized } = usePersonalizationStore();
   const [showSettings, setShowSettings] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -37,30 +37,15 @@ export default function Chat() {
   const { settings } = useSettingsStore();
 
   useEffect(() => {
-    if (settings?.theme) {
-      console.log("Current Theme:", settings.theme.name);
-      console.log("Background:", settings.theme.colors.background);
-      console.log("Foreground:", settings.theme.colors.foreground);
-      console.log("Muted:", settings.theme.colors.muted);
-      console.log("Muted Foreground:", settings.theme.colors.mutedForeground);
-      console.log("Primary:", settings.theme.colors.primary);
-      console.log("Button Text:", settings.theme.colors.buttonText);
-    }
-  }, [settings]);
-
-  useEffect(() => {
     fetchThreads().catch(console.error);
   }, [fetchThreads]);
 
   useEffect(() => {
-    console.log("Chat.tsx hasSeenWelcome:", hasSeenWelcome);
-  }, [hasSeenWelcome]);
-
-  useEffect(() => {
-    if (!authLoading && hasSeenWelcome !== undefined) {
+    console.log('Auth loading:', authLoading, 'Initialized:', initialized);
+    if (!authLoading) {
       setIsInitializing(false);
     }
-  }, [hasSeenWelcome, authLoading]);
+  }, [authLoading]);
 
   const handleNewChat = () => {
     const currentThreadId = useThreadStore.getState().currentThreadId;
@@ -70,10 +55,10 @@ export default function Chat() {
     setSendError(null);
   };
 
-  const handleSendMessage = async (content: string, files?: string[]) => {
+  const handleSendMessage = async (content: string, files?: string[], contextId?: string, isSystemMessage: boolean = false) => {
     setSendError(null);
     try {
-      await sendMessage(content, files, activeContext?.id);
+      await sendMessage(content, files, isSystemMessage ? undefined : activeContext?.id, isSystemMessage);
     } catch (error) {
       const errorMessage = error instanceof Error
         ? error.message
@@ -98,6 +83,39 @@ export default function Chat() {
 
   const handlePersonalization = () => {
     navigate('/account?tab=personalization');
+  };
+
+  const handleWelcomeClose = async () => {
+    try {
+      await setHasSeenWelcome(false); // Don't permanently dismiss, just snooze for session
+      setSendError(null);
+    } catch (error) {
+      console.error('Error closing welcome:', error);
+      setSendError('Failed to update preferences. Please try again.');
+    }
+  };
+
+  const hasPersonalInfo = () => {
+    // Check if any significant fields are filled
+    return !!(
+      personalInfo.name || personalInfo.email || personalInfo.phone ||
+      (personalInfo.interests && personalInfo.interests.length > 0) ||
+      personalInfo.backstory || personalInfo.projects || personalInfo.resume
+    );
+  };
+
+  const handleSetupPersonalization = async () => {
+    try {
+      navigate('/account?tab=personalization');
+      // Only permanently dismiss if there's actual personalization data
+      if (hasPersonalInfo()) {
+        await setHasSeenWelcome(true);
+      } else {
+        await setHasSeenWelcome(false); // Just snooze if no data yet
+      }
+    } catch (error) {
+      console.error('Error setting up personalization:', error);
+    }
   };
 
   if (isInitializing) {
@@ -177,10 +195,10 @@ export default function Chat() {
               <ChatInput
                 onSendMessage={handleSendMessage}
                 isLoading={messageLoading}
-                isVoiceToTextMode={isVoiceToTextMode}
-                setIsVoiceToTextMode={setIsVoiceToTextMode}
-                isVoiceToVoiceMode={isVoiceToVoiceMode}
-                setIsVoiceToVoiceMode={setIsVoiceToVoiceMode}
+                isVoiceToTextMode={isActive && isVoiceToTextMode}
+                setIsVoiceToTextMode={(enabled) => isActive && setIsVoiceToTextMode(enabled)}
+                isVoiceToVoiceMode={isActive && isVoiceToVoiceMode}
+                setIsVoiceToVoiceMode={(enabled) => isActive && setIsVoiceToVoiceMode(enabled)}
               />
             </div>
           </div>
@@ -202,13 +220,11 @@ export default function Chat() {
       {showSettings && <Settings onClose={() => setShowSettings(false)} />}
 
       {/* Welcome Dialog */}
-      {!hasSeenWelcome && !isInitializing && (
-        <PersonalizationWelcome
-          onClose={() => {
-            if (sendError === 'Failed to save personalization preference. Please try again.') {
-              setSendError(null);
-            }
-            console.log('Welcome dialog closed');
+      {initialized && !hasSeenWelcome && !snoozedForSession && !hasPersonalInfo() && !isInitializing && (
+        <PersonalizationWelcome 
+          onClose={handleWelcomeClose} 
+          onSetup={() => {
+            handleSetupPersonalization();
           }}
         />
       )}

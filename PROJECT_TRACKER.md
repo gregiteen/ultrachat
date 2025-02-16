@@ -39,6 +39,7 @@ This plan outlines the development phases and tasks for the Ultrachat project, b
     - Message search and filtering ✓
     - Chat history organization ✓
     - Thread management ✓
+    - Perplexity-style search integration ✓
 -   **[DONE]** Improve chat interface
     - Better message rendering ✓
     - Code block handling ✓
@@ -118,7 +119,11 @@ This plan outlines the development phases and tasks for the Ultrachat project, b
   - Improved state management with store splitting and debouncing
   - Added optimistic updates for better UX
   - Implemented message prefetching for smoother scrolling
-
+- Perplexity-style search:
+  - Added search mode toggle
+  - Implemented automatic search detection
+  - Added source citations and follow-ups
+  - Clean markdown formatting
 
 ### 2/15/2025
 
@@ -140,5 +145,19 @@ This plan outlines the development phases and tasks for the Ultrachat project, b
   - Asked the user to verify environment variables (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`) and the location of the `.env` file.
   - Discovered and fixed a `useLocation()` hook error by moving it to `AppLayout.tsx`.
 - **Resolution:**  Despite extensive troubleshooting, the root cause of the white screen remained elusive.  The decision was made to revert `App.tsx` to its original state and pursue alternative debugging strategies. The `useLocation` error was fixed by moving the hook to the correct context.
+
+### 2/16/2025
+
+- **Enhancement:** Implemented Perplexity-style search functionality
+- **Changes:**
+  - Added search mode toggle in chat bar
+  - Implemented automatic search detection using Gemini
+  - Added source citations and follow-up questions
+  - Improved markdown formatting for search results
+  - Fixed search button functionality
+  - Added proper state management for search mode
+  - Integrated Brave Search API
+  - Added AI-enhanced query rewriting
+  - Implemented clean result parsing and ranking
 
 Each task should have a clear description, priority level, and estimated completion time. Regular updates and reviews will help ensure the project stays on track.

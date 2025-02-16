@@ -90,7 +90,8 @@ export const DESIGNER_THEMES: Theme[] = [
 
 export function generateCSSVariables(theme: Theme): string {
   return `
-    :root {
+    .theme-scope {
+      color-scheme: ${theme.colors.background === '#ffffff' ? 'light' : 'dark'};
       --background: ${theme.colors.background};
       --foreground: ${theme.colors.foreground};
       --primary: ${theme.colors.primary};
@@ -103,6 +104,19 @@ export function generateCSSVariables(theme: Theme): string {
       --icon-color: ${theme.colors.iconColor};
       --icon-hover: ${theme.colors.iconHover};
     }
+    
+    .theme-scope {
+      background-color: var(--background);
+      color: var(--foreground);
+    }
+    
+    .theme-scope input, .theme-scope textarea, .theme-scope select {
+      background-color: var(--input-background);
+      color: var(--foreground);
+      border-color: var(--muted);
+    }
+    
+    .theme-scope ::selection { background-color: var(--primary); color: var(--button-text); }
   `;
 }
 

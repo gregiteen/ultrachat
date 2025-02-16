@@ -39,13 +39,14 @@ export interface ButtonProps
   loading?: boolean;
   icon?: React.ReactNode;
   children?: React.ReactNode;
+  style?: React.CSSProperties;
 }
 
 export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, fullWidth, loading, icon, children, disabled, ...props }, ref) => {
+  ({ className, variant, size, fullWidth, loading, icon, children, disabled, style, ...props }, ref) => {
     return (
       <motion.button
-        className={cn(buttonVariants({ variant, size, fullWidth, className }))}
+        className={cn(buttonVariants({ variant, size, fullWidth }), className)}
         ref={ref}
         disabled={disabled || loading}
         aria-busy={loading}
@@ -55,6 +56,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
           scale: [1, 0.98, 1],
           transition: { duration: 1, repeat: Infinity }
         } : undefined}
+        style={style}
         {...props}
       >
         {loading ? (

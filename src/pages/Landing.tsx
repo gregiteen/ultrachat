@@ -39,10 +39,24 @@ export default function Landing() {
   return (
     <div className="bg-background">
       {/* Hero Section */}
+      <div className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-sm border-b border-muted">
+        <div className="mx-auto max-w-7xl px-6 py-4 flex justify-between items-center">
+          <img src="https://imgur.com/EJ0T2co.png" alt="UltraChat" className="h-8 w-auto" />
+          <Link
+            to="/auth"
+            className="rounded-md bg-primary px-3 py-2 text-sm font-semibold text-button-text shadow-sm hover:bg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary transition-colors"
+          >
+            Login
+          </Link>
+        </div>
+      </div>
+      
+      {/* Add padding to account for fixed header */}
+      <div className="h-16"></div>
+      
       <div className="relative isolate overflow-hidden">
         <div className="mx-auto max-w-7xl px-6 pb-24 pt-10 sm:pb-32 lg:flex lg:px-8 lg:py-40">
           <div className="mx-auto max-w-2xl flex-shrink-0 lg:mx-0 lg:max-w-xl lg:pt-8">
-            <img src="https://imgur.com/EJ0T2co.png" alt="UltraChat" className="h-16 w-auto" />
             <div className="mt-24 sm:mt-32 lg:mt-16">
               <a href="#" className="inline-flex space-x-6">
                 <span className="rounded-full bg-primary/10 px-3 py-1 text-sm font-semibold leading-6 text-primary ring-1 ring-inset ring-primary/10">

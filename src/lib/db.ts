@@ -1,75 +1,124 @@
 import { SupabaseClient } from '@supabase/supabase-js';
 
-// Helper function to safely handle string values
-const ensureString = (value: string | null | undefined): string => {
-  if (typeof value === 'string') return value;
-  return '';
-};
-
-interface QueryResult<T> {
-  data: T[] | null;
-  error: any;
-  count?: number;
-}
-
-interface SingleQueryResult<T> {
-  data: T | null;
-  error: any;
-}
-
-// Type-safe query builder
 export class QueryBuilder<T = any> {
-  constructor(private query: any) {}
+  private query: any;
 
-  eq(field: string, value: string | null | undefined) {
-    return new QueryBuilder<T>(this.query.eq(field, ensureString(value)));
+  constructor(private client: SupabaseClient, private table: string) {
+    this.query = client.from(table);
   }
 
-  static from<T>(supabase: SupabaseClient, table: string) {
-    return new QueryBuilder<T>(supabase.from(table));
+  select(columns: string, options?: { count?: 'exact' | null }) {
+    this.query = this.query.select(columns, options);
+    return this;
   }
 
-  select(columns: string = '*', options?: { count?: 'exact' }) {
-    return new QueryBuilder<T>(this.query.select(columns, options));
+  eq(column: string, value: any) {
+    this.query = this.query.eq(column, value);
+    return this;
   }
 
-  async single(): Promise<SingleQueryResult<T>> {
-    const result = await this.query.single();
-    return {
-      data: result.data as T | null,
-      error: result.error
-    };
+  neq(column: string, value: any) {
+    this.query = this.query.neq(column, value);
+    return this;
+  }
+
+  gt(column: string, value: any) {
+    this.query = this.query.gt(column, value);
+    return this;
+  }
+
+  gte(column: string, value: any) {
+    this.query = this.query.gte(column, value);
+    return this;
+  }
+
+  lt(column: string, value: any) {
+    this.query = this.query.lt(column, value);
+    return this;
+  }
+
+  lte(column: string, value: any) {
+    this.query = this.query.lte(column, value);
+    return this;
+  }
+
+  is(column: string, value: any) {
+    this.query = this.query.is(column, value);
+    return this;
+  }
+
+  in(column: string, values: any[]) {
+    this.query = this.query.in(column, values);
+    return this;
+  }
+
+  contains(column: string, value: any) {
+    this.query = this.query.contains(column, value);
+    return this;
   }
 
   order(column: string, options?: { ascending?: boolean }) {
-    return new QueryBuilder<T>(this.query.order(column, options));
+    this.query = this.query.order(column, options);
+    return this;
+  }
+
+  limit(count: number) {
+    this.query = this.query.limit(count);
+    return this;
   }
 
   range(from: number, to: number) {
-    return new QueryBuilder<T>(this.query.range(from, to));
+    this.query = this.query.range(from, to);
+    return this;
   }
 
-  is(field: string, value: any) {
-    return new QueryBuilder<T>(this.query.is(field, value));
+  single() {
+    this.query = this.query.single();
+    return this;
+  }
+
+  maybeSingle() {
+    this.query = this.query.maybeSingle();
+    return this;
   }
 
   insert(values: Partial<T>) {
-    return new QueryBuilder<T>(this.query.insert(values));
+    this.query = this.query.insert(values);
+    return this;
   }
 
   update(values: Partial<T>) {
-    return new QueryBuilder<T>(this.query.update(values));
+    this.query = this.query.update(values);
+    return this;
   }
 
-  async then<TResult1 = QueryResult<T>>(
-    onfulfilled?: ((value: QueryResult<T>) => TResult1 | PromiseLike<TResult1>) | undefined
-  ): Promise<TResult1> {
-    const result = await this.query;
-    const queryResult: QueryResult<T> = {
-      data: result.data as T[] | null,
-      error: result.error,
-      count: result.count
-    };
-    return onfulfilled ? onfulfilled(queryResult) : queryResult as any;
+  delete() {
+    this.query = this.query.delete();
+    return this;
   }
+
+  async execute(): Promise<{ 
+    data: T | T[] | null;
+    error: Error | null;
+    count?: number | null;
+  }> {
+    try {
+      const result = await this.query;
+      return {
+        data: result.data as T | T[],
+        error: result.error,
+        count: result.count
+      };
+    } catch (error) {
+      return {
+        data: null,
+        error: error as Error
+      };
+    }
+  }
+}
+
+// Helper function to create a new query builder
+export function createQuery<T>(client: SupabaseClient, table: string): QueryBuilder<T> {
+  return new QueryBuilder<T>(client, table);
 }

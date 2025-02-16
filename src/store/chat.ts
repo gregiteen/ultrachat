@@ -1,9 +1,10 @@
 import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
-import { getChatModel } from '../lib/gemini';
+import { getChatModel, gemini } from '../lib/gemini';
 import type { Message, Thread } from '../types';
-import { debounce } from '../lib/utils';
-import { QueryBuilder } from '../lib/db';
+import { createQuery } from '../lib/db';
+import { searchService } from '../lib/search-service';
+import { usePersonalizationStore } from './personalization';
 
 // Helper function to safely handle response text
 const getResponseText = (response: { text: () => string } | null | undefined): string => {
@@ -93,7 +94,7 @@ interface MessageState {
   error: string | null;
   streamingMessageId: string | null;
   fetchMessages: (threadId: string, page?: number) => Promise<void>;
-  sendMessage: (content: string, files?: string[], contextId?: string) => Promise<void>;
+  sendMessage: (content: string, files?: string[], contextId?: string, isSystemMessage?: boolean, skipAiResponse?: boolean, forceSearch?: boolean) => Promise<void>;
   clearThreadMessages: (threadId: string) => void;
   updateStreamingMessage: (content: string) => void;
   prefetchNextPage: (threadId: string) => Promise<void>;
@@ -135,21 +136,21 @@ export const useMessageStore = create<MessageState>((set, get) => ({
 
       const offset = (page - 1) * MESSAGES_PER_PAGE;
       
-      const { data, error, count } = await QueryBuilder
-        .from(supabase, 'messages')
+      const result = await createQuery<Message>(supabase, 'messages')
         .select('*', { count: 'exact' })
         .eq('thread_id', threadId)
         .order('created_at', { ascending: false })
-        .range(offset, offset + MESSAGES_PER_PAGE - 1);
+        .range(offset, offset + MESSAGES_PER_PAGE - 1)
+        .execute();
 
-      if (error) throw new ChatError(
+      if (result.error) throw new ChatError(
         'Failed to load messages. Please check your connection.',
         'DATABASE_ERROR',
         true
       );
 
-      const hasMore = count ? offset + MESSAGES_PER_PAGE < count : false;
-      const fetchedMessages = (data || []).reverse();
+      const hasMore = result.count ? offset + MESSAGES_PER_PAGE < result.count : false;
+      const fetchedMessages = (result.data as Message[] || []).reverse();
 
       // Update cache and state
       const existingMessages = page === 1 ? [] : get().messages;
@@ -185,17 +186,17 @@ export const useMessageStore = create<MessageState>((set, get) => ({
     const offset = (nextPage - 1) * MESSAGES_PER_PAGE;
 
     try {
-      const { data } = await QueryBuilder
-        .from(supabase, 'messages')
+      const result = await createQuery<Message>(supabase, 'messages')
         .select('*')
         .eq('thread_id', threadId)
         .order('created_at', { ascending: false })
-        .range(offset, offset + MESSAGES_PER_PAGE - 1);
+        .range(offset, offset + MESSAGES_PER_PAGE - 1)
+        .execute();
 
-      if (data && data.length > 0) {
+      if (result.data && Array.isArray(result.data) && result.data.length > 0) {
         // Store in cache for later use
         const existingMessages = get().messages;
-        const prefetchedMessages = [...existingMessages, ...data.reverse()];
+        const prefetchedMessages = [...existingMessages, ...result.data.reverse()];
         get().messageCache.put(threadId, prefetchedMessages);
       }
     } catch (error) {
@@ -225,7 +226,7 @@ export const useMessageStore = create<MessageState>((set, get) => ({
     set({ messages: updatedMessages });
   },
 
-  sendMessage: async (content: string, files?: string[], contextId?: string) => {
+  sendMessage: async (content: string, files?: string[], contextId?: string, isSystemMessage: boolean = false, skipAiResponse: boolean = false, forceSearch: boolean = false) => {
     set({ sendingMessage: true, error: null });
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -233,38 +234,41 @@ export const useMessageStore = create<MessageState>((set, get) => ({
 
       let threadId = useThreadStore.getState().currentThreadId;
 
-      if (!threadId) {
-        const { data: thread, error: threadError } = await QueryBuilder
-          .from(supabase, 'threads')
+      if (!threadId && !isSystemMessage) {
+        const result = await createQuery<Thread>(supabase, 'threads')
           .insert({
             id: crypto.randomUUID(),
             user_id: user.id,
             context_id: contextId,
             title: 'New Conversation'
           })
-          .select()
-          .single();
+          .select('*')
+          .single()
+          .execute();
 
-        if (threadError) throw new ChatError(
+        if (result.error) throw new ChatError(
           'Failed to create new conversation. Please try again.',
           'DATABASE_ERROR',
           true
         );
-        threadId = thread!.id;
-        useThreadStore.getState().switchThread(threadId);
+        
+        const thread = result.data as Thread;
+        threadId = thread.id;
+        if (!isSystemMessage) useThreadStore.getState().switchThread(threadId);
       }
 
       // Get context if provided
       let contextContent = '';
       if (contextId) {
-        const { data: context } = await QueryBuilder
-          .from(supabase, 'contexts')
+        const result = await createQuery<{ content: string }>(supabase, 'contexts')
           .select('content')
           .eq('id', contextId)
-          .single();
+          .single()
+          .execute();
 
-        if (context?.content) {
-          contextContent = `Context: ${context.content}\n\n`;
+        const contextData = result.data as { content: string } | null;
+        if (contextData?.content) {
+          contextContent = `Context: ${contextData.content}\n\n`;
         }
       }
 
@@ -272,8 +276,8 @@ export const useMessageStore = create<MessageState>((set, get) => ({
       const optimisticMessage = {
         id: crypto.randomUUID(),
         content,
-        role: 'user',
-        thread_id: threadId,
+        role: isSystemMessage ? 'system' : 'user',
+        thread_id: threadId || '',
         user_id: user.id,
         context_id: contextId,
         files: files || [],
@@ -284,27 +288,32 @@ export const useMessageStore = create<MessageState>((set, get) => ({
       const updatedMessages = [...get().messages, optimisticMessage];
       set({ messages: updatedMessages });
 
-      const { data: userMessage, error: userError } = await QueryBuilder
-        .from(supabase, 'messages')
+      const userResult = await createQuery<Message>(supabase, 'messages')
         .insert({
           content,
-          role: 'user',
-          thread_id: threadId,
+          role: isSystemMessage ? 'system' : 'user',
+          thread_id: threadId || '',
           user_id: user.id,
           context_id: contextId,
           files: files || []
         })
         .select('*, files')
-        .single();
+        .single()
+        .execute();
 
-      if (userError) throw new ChatError(
+      if (userResult.error) throw new ChatError(
         'Failed to send message. Please try again.',
         'DATABASE_ERROR',
         true
       );
 
       // Update cache
-      get().messageCache.put(threadId, updatedMessages);
+      get().messageCache.put(threadId || '', updatedMessages);
+
+      // Skip AI response for system messages or when explicitly requested
+      if (isSystemMessage || skipAiResponse) {
+        return;
+      }
 
       // Handle AI response
       const model = getChatModel();
@@ -336,8 +345,54 @@ export const useMessageStore = create<MessageState>((set, get) => ({
       }
 
       const chat = model.startChat();
+      
+      // Add personalization context
+      const personalInfo = usePersonalizationStore.getState().personalInfo;
+      const isPersonalizationActive = usePersonalizationStore.getState().isActive;
+      
+      if (isPersonalizationActive && personalInfo?.personalization_document) {
+        chat.setPersonalizationContext({
+          name: personalInfo.name,
+          personalDocument: JSON.stringify(personalInfo.personalization_document, null, 2),
+          preferences: {
+            communication: personalInfo.communication_preferences?.tone,
+            learning: personalInfo.learning_preferences?.style,
+            workStyle: personalInfo.work_preferences?.style
+          }
+        });
+      }
+
+      // Check if we should search
+      const shouldSearch = forceSearch || await (async () => {
+        const searchCheckPrompt = `Given this user message, determine if an internet search would be helpful to provide accurate, up-to-date information:
+
+"${content}"
+
+Return ONLY "true" or "false". Consider:
+- Questions about current events or recent developments
+- Requests for factual information
+- Queries about specific topics that benefit from multiple sources
+- Direct requests for search/research`;
+
+        const searchCheck = await gemini.generateText(searchCheckPrompt);
+        return searchCheck.trim().toLowerCase() === 'true';
+      })();
+
+      if (shouldSearch) {
+        // Get search results
+        const searchResults = await searchService.search(content);
+
+        // Send search results as system message
+        await get().sendMessage(JSON.stringify({
+          type: 'search_results',
+          data: searchResults
+        }), [], undefined, true);
+      }
+
+      // Send message with context
       const messageText = joinMessageParts([contextContent, content, fileContent]);
       const result = await chat.sendMessage(messageText);
+
       const response = getResponseText(result.response);
 
       if (!response) {
@@ -348,28 +403,28 @@ export const useMessageStore = create<MessageState>((set, get) => ({
         );
       }
 
-      const { data: aiMessage, error: aiError } = await QueryBuilder
-        .from(supabase, 'messages')
+      const aiResult = await createQuery<Message>(supabase, 'messages')
         .insert({
           content: response,
           role: 'assistant',
-          thread_id: threadId,
+          thread_id: threadId || '',
           user_id: user.id,
           context_id: contextId,
           files: []
         })
-        .select()
-        .single();
+        .select('*')
+        .single()
+        .execute();
 
-      if (aiError) throw new ChatError(
+      if (aiResult.error) throw new ChatError(
         'Failed to receive AI response. Please try again.',
         'DATABASE_ERROR',
         true
       );
 
       // Update messages and cache with AI response
-      const finalMessages = [...get().messages, aiMessage!];
-      get().messageCache.put(threadId, finalMessages);
+      const finalMessages = [...get().messages, aiResult.data as Message];
+      get().messageCache.put(threadId || '', finalMessages);
       set({ messages: finalMessages });
 
     } catch (error) {
@@ -410,20 +465,21 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
         'AUTH_ERROR'
       );
 
-      const { data, error } = await QueryBuilder
-        .from(supabase, 'threads')
+      const result = await createQuery<Thread>(supabase, 'threads')
         .select('*')
         .eq('user_id', user.id)
         .is('deleted_at', null)
-        .order('updated_at', { ascending: false });
+        .order('updated_at', { ascending: false })
+        .execute();
 
-      if (error) throw new ChatError(
+      if (result.error) throw new ChatError(
         'Failed to load your conversations. Please check your connection.',
         'DATABASE_ERROR',
         true
       );
 
-      const sortedThreads = [...(data || [])].sort((a, b) => {
+      const threads = result.data as Thread[];
+      const sortedThreads = [...threads].sort((a, b) => {
         return (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || 
                new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
       });
@@ -450,13 +506,13 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
         'AUTH_ERROR'
       );
 
-      const { error } = await QueryBuilder
-        .from(supabase, 'threads')
+      const result = await createQuery<Thread>(supabase, 'threads')
         .update({ title })
         .eq('id', threadId)
-        .eq('user_id', user.id);
+        .eq('user_id', user.id)
+        .execute();
 
-      if (error) throw new ChatError(
+      if (result.error) throw new ChatError(
         'Failed to rename conversation. Please try again.',
         'DATABASE_ERROR',
         true
@@ -481,13 +537,13 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
         'AUTH_ERROR'
       );
 
-      const { error } = await QueryBuilder
-        .from(supabase, 'threads')
+      const result = await createQuery<Thread>(supabase, 'threads')
         .update({ deleted_at: new Date().toISOString() })
         .eq('id', threadId)
-        .eq('user_id', user.id);
+        .eq('user_id', user.id)
+        .execute();
 
-      if (error) throw new ChatError(
+      if (result.error) throw new ChatError(
         'Failed to delete conversation. Please try again.',
         'DATABASE_ERROR',
         true
@@ -512,12 +568,12 @@ export const useThreadStore = create<ThreadState>((set, get) => ({
         false
       );
 
-      const { error } = await QueryBuilder
-        .from(supabase, 'threads')
+      const result = await createQuery<Thread>(supabase, 'threads')
         .update({ pinned: !thread.pinned })
-        .eq('id', threadId);
+        .eq('id', threadId)
+        .execute();
 
-      if (error) throw new ChatError(
+      if (result.error) throw new ChatError(
         'Failed to update conversation pin status. Please try again.',
         'DATABASE_ERROR'
       );

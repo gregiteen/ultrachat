@@ -30,6 +30,7 @@ export function PersonalInfoSection({
   personalInfo,
   setPersonalInfo,
 }: PersonalInfoSectionProps) {
+  const [formData, setFormData] = useState<PersonalInfo>(personalInfo);
   const [newHobby, setNewHobby] = useState('');
   const [newFood, setNewFood] = useState('');
   const [newDrink, setNewDrink] = useState('');
@@ -44,17 +45,17 @@ export function PersonalInfoSection({
 
   const addToArray = (field: keyof PersonalInfo, value: string) => {
     if (!value) return;
-    const currentArray = personalInfo[field] as string[] || [];
-    setPersonalInfo({
-      ...personalInfo,
+    const currentArray = formData[field] as string[] || [];
+    setFormData({
+      ...formData,
       [field]: [...currentArray, value],
     });
   };
 
   const removeFromArray = (field: keyof PersonalInfo, index: number) => {
-    const currentArray = personalInfo[field] as string[] || [];
-    setPersonalInfo({
-      ...personalInfo,
+    const currentArray = formData[field] as string[] || [];
+    setFormData({
+      ...formData,
       [field]: currentArray.filter((_, i) => i !== index),
     });
   };
@@ -98,7 +99,7 @@ export function PersonalInfoSection({
         </button>
       </div>
       <div className="flex flex-wrap gap-2">
-        {(personalInfo[field] as string[] || []).map((item, index) => (
+        {(formData[field] as string[] || []).map((item, index) => (
           <span
             key={index}
             className="inline-flex items-center gap-1 px-2 py-1 bg-muted/10 rounded-md text-sm"
@@ -117,306 +118,322 @@ export function PersonalInfoSection({
     </div>
   );
 
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    setPersonalInfo(formData);
+  };
+
   return (
-    <div className="space-y-6">
-      <h3 className="text-lg font-medium text-foreground">Personal Information</h3>
-      
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-1">
-            Name
-          </label>
-          <input
-            type="text"
-            value={personalInfo.name || ''}
-            onChange={(e) => setPersonalInfo({ ...personalInfo, name: e.target.value })}
-            className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-            placeholder="Full Name"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-1">
-            MBTI Type
-          </label>
-          <Select
-            value={MBTI_OPTIONS.find(opt => opt.value === personalInfo.mbti)}
-            onChange={(option) => setPersonalInfo({ ...personalInfo, mbti: option?.value })}
-            options={MBTI_OPTIONS}
-            className="react-select-container"
-            classNamePrefix="react-select"
-            placeholder="Select MBTI type..."
-            isClearable
-          />
-        </div>
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium text-foreground mb-1">
-          Backstory
-        </label>
-        <textarea
-          value={personalInfo.backstory || ''}
-          onChange={(e) => setPersonalInfo({ ...personalInfo, backstory: e.target.value })}
-          className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-          placeholder="Share your life story and background"
-          rows={4}
-        />
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium text-foreground mb-1">
-          Current Projects
-        </label>
-        <textarea
-          value={personalInfo.projects || ''}
-          onChange={(e) => setPersonalInfo({ ...personalInfo, projects: e.target.value })}
-          className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-          placeholder="What are you currently working on?"
-          rows={4}
-        />
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-1">
-            Job
-          </label>
-          <input
-            type="text"
-            value={personalInfo.job || ''}
-            onChange={(e) => setPersonalInfo({ ...personalInfo, job: e.target.value })}
-            className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-            placeholder="Current Job"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-1">
-            Company
-          </label>
-          <input
-            type="text"
-            value={personalInfo.company || ''}
-            onChange={(e) => setPersonalInfo({ ...personalInfo, company: e.target.value })}
-            className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-            placeholder="Company Name"
-          />
-        </div>
-      </div>
-
-      <div>
-        <label className="block text-sm font-medium text-foreground mb-1">
-          Address
-        </label>
-        <div className="space-y-2">
-          <input
-            type="text"
-            value={personalInfo.address?.street || ''}
-            onChange={(e) => setPersonalInfo({
-              ...personalInfo,
-              address: { ...personalInfo.address, street: e.target.value }
-            })}
-            className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-            placeholder="Street Address"
-          />
-          <div className="grid grid-cols-2 gap-4">
+    <form onSubmit={handleSubmit} className="space-y-6">
+      <div className="space-y-6">
+        <h3 className="text-lg font-medium text-foreground">Personal Information</h3>
+        
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1">
+              Name
+            </label>
             <input
               type="text"
-              value={personalInfo.address?.city || ''}
-              onChange={(e) => setPersonalInfo({
-                ...personalInfo,
-                address: { ...personalInfo.address, city: e.target.value }
-              })}
+              value={formData.name || ''}
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
               className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-              placeholder="City"
-            />
-            <input
-              type="text"
-              value={personalInfo.address?.state || ''}
-              onChange={(e) => setPersonalInfo({
-                ...personalInfo,
-                address: { ...personalInfo.address, state: e.target.value }
-              })}
-              className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-              placeholder="State"
+              placeholder="Full Name"
             />
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <input
-              type="text"
-              value={personalInfo.address?.zip || ''}
-              onChange={(e) => setPersonalInfo({
-                ...personalInfo,
-                address: { ...personalInfo.address, zip: e.target.value }
-              })}
-              className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-              placeholder="ZIP Code"
-            />
-            <input
-              type="text"
-              value={personalInfo.address?.country || ''}
-              onChange={(e) => setPersonalInfo({
-                ...personalInfo,
-                address: { ...personalInfo.address, country: e.target.value }
-              })}
-              className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-              placeholder="Country"
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1">
+              MBTI Type
+            </label>
+            <Select
+              value={MBTI_OPTIONS.find(opt => opt.value === formData.mbti)}
+              onChange={(option) => setFormData({ ...formData, mbti: option?.value })}
+              options={MBTI_OPTIONS}
+              className="react-select-container"
+              classNamePrefix="react-select"
+              placeholder="Select MBTI type..."
+              isClearable
             />
           </div>
         </div>
+
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-1">
+            Backstory
+          </label>
+          <textarea
+            value={formData.backstory || ''}
+            onChange={(e) => setFormData({ ...formData, backstory: e.target.value })}
+            className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
+            placeholder="Share your life story and background"
+            rows={4}
+          />
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-1">
+            Current Projects
+          </label>
+          <textarea
+            value={formData.projects || ''}
+            onChange={(e) => setFormData({ ...formData, projects: e.target.value })}
+            className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
+            placeholder="What are you currently working on?"
+            rows={4}
+          />
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1">
+              Job
+            </label>
+            <input
+              type="text"
+              value={formData.job || ''}
+              onChange={(e) => setFormData({ ...formData, job: e.target.value })}
+              className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
+              placeholder="Current Job"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1">
+              Company
+            </label>
+            <input
+              type="text"
+              value={formData.company || ''}
+              onChange={(e) => setFormData({ ...formData, company: e.target.value })}
+              className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
+              placeholder="Company Name"
+            />
+          </div>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-1">
+            Address
+          </label>
+          <div className="space-y-2">
+            <input
+              type="text"
+              value={formData.address?.street || ''}
+              onChange={(e) => setFormData({
+                ...formData,
+                address: { ...formData.address, street: e.target.value }
+              })}
+              className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
+              placeholder="Street Address"
+            />
+            <div className="grid grid-cols-2 gap-4">
+              <input
+                type="text"
+                value={formData.address?.city || ''}
+                onChange={(e) => setFormData({
+                  ...formData,
+                  address: { ...formData.address, city: e.target.value }
+                })}
+                className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
+                placeholder="City"
+              />
+              <input
+                type="text"
+                value={formData.address?.state || ''}
+                onChange={(e) => setFormData({
+                  ...formData,
+                  address: { ...formData.address, state: e.target.value }
+                })}
+                className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
+                placeholder="State"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <input
+                type="text"
+                value={formData.address?.zip || ''}
+                onChange={(e) => setFormData({
+                  ...formData,
+                  address: { ...formData.address, zip: e.target.value }
+                })}
+                className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
+                placeholder="ZIP Code"
+              />
+              <input
+                type="text"
+                value={formData.address?.country || ''}
+                onChange={(e) => setFormData({
+                  ...formData,
+                  address: { ...formData.address, country: e.target.value }
+                })}
+                className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
+                placeholder="Country"
+              />
+            </div>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1">
+              Phone
+            </label>
+            <input
+              type="tel"
+              value={formData.phone || ''}
+              onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+              className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
+              placeholder="Phone Number"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1">
+              Email
+            </label>
+            <input
+              type="email"
+              value={formData.email || ''}
+              onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+              className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
+              placeholder="Email Address"
+            />
+          </div>
+        </div>
+
+        {renderArrayInput('Pets', 'pets', newPet, setPet, 'Add a pet')}
+        {renderArrayInput('Health Concerns', 'health_concerns', newHealthConcern, setHealthConcern, 'Add a health concern')}
+
+        <div className="grid grid-cols-3 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1">
+              Height
+            </label>
+            <input
+              type="text"
+              value={formData.height || ''}
+              onChange={(e) => setFormData({ ...formData, height: e.target.value })}
+              className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
+              placeholder="e.g., 5'10''"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1">
+              Weight
+            </label>
+            <input
+              type="text"
+              value={formData.weight || ''}
+              onChange={(e) => setFormData({ ...formData, weight: e.target.value })}
+              className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
+              placeholder="e.g., 160 lbs"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1">
+              Shoe Size
+            </label>
+            <input
+              type="text"
+              value={formData.shoe_size || ''}
+              onChange={(e) => setFormData({ ...formData, shoe_size: e.target.value })}
+              className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
+              placeholder="e.g., US 10"
+            />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1">
+              Top Size
+            </label>
+            <input
+              type="text"
+              value={formData.clothing_sizes?.top || ''}
+              onChange={(e) => setFormData({
+                ...formData,
+                clothing_sizes: { ...formData.clothing_sizes, top: e.target.value }
+              })}
+              className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
+              placeholder="e.g., Medium"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1">
+              Bottom Size
+            </label>
+            <input
+              type="text"
+              value={formData.clothing_sizes?.bottom || ''}
+              onChange={(e) => setFormData({
+                ...formData,
+                clothing_sizes: { ...formData.clothing_sizes, bottom: e.target.value }
+              })}
+              className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
+              placeholder="e.g., 32x32"
+            />
+          </div>
+        </div>
+
+        {renderArrayInput('Goals', 'goals', newGoal, setGoal, 'Add a goal')}
+        {renderArrayInput('Dreams', 'dreams', newDream, setDream, 'Add a dream')}
+
+        <div>
+          <label className="block text-sm font-medium text-foreground mb-1">
+            Resume
+          </label>
+          <textarea
+            value={formData.resume || ''}
+            onChange={(e) => setFormData({ ...formData, resume: e.target.value })}
+            className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
+            placeholder="Professional experience and qualifications"
+            rows={4}
+          />
+        </div>
+
+        {renderArrayInput('Hobbies', 'hobbies', newHobby, setNewHobby, 'Add a hobby')}
+        {renderArrayInput('Family Members', 'family', newFamilyMember, setFamilyMember, 'Add a family member')}
+        {renderArrayInput('Favorite Foods', 'favorite_foods', newFood, setNewFood, 'Add a favorite food')}
+        {renderArrayInput('Favorite Drinks', 'favorite_drinks', newDrink, setNewDrink, 'Add a favorite drink')}
+        {renderArrayInput('Friends', 'friends', newFriend, setFriend, 'Add a friend')}
+        {renderArrayInput('Love Interests', 'love_interests', newLoveInterest, setLoveInterest, 'Add a love interest')}
+        {renderArrayInput('Cultural Groups', 'cultural_groups', newCulturalGroup, setCulturalGroup, 'Add a cultural group')}
+
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1">
+              Religion
+            </label>
+            <input
+              type="text"
+              value={formData.religion || ''}
+              onChange={(e) => setFormData({ ...formData, religion: e.target.value })}
+              className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
+              placeholder="Religious beliefs"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-foreground mb-1">
+              Worldview
+            </label>
+            <input
+              type="text"
+              value={formData.worldview || ''}
+              onChange={(e) => setFormData({ ...formData, worldview: e.target.value })}
+              className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
+              placeholder="Personal philosophy or worldview"
+            />
+          </div>
+        </div>
+
+        <div className="flex justify-end pt-6">
+          <button
+            type="submit"
+            className="px-4 py-2 bg-primary text-button-text rounded-md hover:bg-secondary transition-colors"
+          >
+            Save Changes
+          </button>
+        </div>
       </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-1">
-            Phone
-          </label>
-          <input
-            type="tel"
-            value={personalInfo.phone || ''}
-            onChange={(e) => setPersonalInfo({ ...personalInfo, phone: e.target.value })}
-            className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-            placeholder="Phone Number"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-1">
-            Email
-          </label>
-          <input
-            type="email"
-            value={personalInfo.email || ''}
-            onChange={(e) => setPersonalInfo({ ...personalInfo, email: e.target.value })}
-            className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-            placeholder="Email Address"
-          />
-        </div>
-      </div>
-
-      {renderArrayInput('Pets', 'pets', newPet, setPet, 'Add a pet')}
-      {renderArrayInput('Health Concerns', 'health_concerns', newHealthConcern, setHealthConcern, 'Add a health concern')}
-
-      <div className="grid grid-cols-3 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-1">
-            Height
-          </label>
-          <input
-            type="text"
-            value={personalInfo.height || ''}
-            onChange={(e) => setPersonalInfo({ ...personalInfo, height: e.target.value })}
-            className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-            placeholder="e.g., 5'10''"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-1">
-            Weight
-          </label>
-          <input
-            type="text"
-            value={personalInfo.weight || ''}
-            onChange={(e) => setPersonalInfo({ ...personalInfo, weight: e.target.value })}
-            className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-            placeholder="e.g., 160 lbs"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-1">
-            Shoe Size
-          </label>
-          <input
-            type="text"
-            value={personalInfo.shoe_size || ''}
-            onChange={(e) => setPersonalInfo({ ...personalInfo, shoe_size: e.target.value })}
-            className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-            placeholder="e.g., US 10"
-          />
-        </div>
-      </div>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-1">
-            Top Size
-          </label>
-          <input
-            type="text"
-            value={personalInfo.clothing_sizes?.top || ''}
-            onChange={(e) => setPersonalInfo({
-              ...personalInfo,
-              clothing_sizes: { ...personalInfo.clothing_sizes, top: e.target.value }
-            })}
-            className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-            placeholder="e.g., Medium"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-1">
-            Bottom Size
-          </label>
-          <input
-            type="text"
-            value={personalInfo.clothing_sizes?.bottom || ''}
-            onChange={(e) => setPersonalInfo({
-              ...personalInfo,
-              clothing_sizes: { ...personalInfo.clothing_sizes, bottom: e.target.value }
-            })}
-            className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-            placeholder="e.g., 32x32"
-          />
-        </div>
-      </div>
-
-      {renderArrayInput('Goals', 'goals', newGoal, setGoal, 'Add a goal')}
-      {renderArrayInput('Dreams', 'dreams', newDream, setDream, 'Add a dream')}
-
-      <div>
-        <label className="block text-sm font-medium text-foreground mb-1">
-          Resume
-        </label>
-        <textarea
-          value={personalInfo.resume || ''}
-          onChange={(e) => setPersonalInfo({ ...personalInfo, resume: e.target.value })}
-          className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-          placeholder="Professional experience and qualifications"
-          rows={4}
-        />
-      </div>
-
-      {renderArrayInput('Hobbies', 'hobbies', newHobby, setNewHobby, 'Add a hobby')}
-      {renderArrayInput('Family Members', 'family', newFamilyMember, setFamilyMember, 'Add a family member')}
-      {renderArrayInput('Favorite Foods', 'favorite_foods', newFood, setNewFood, 'Add a favorite food')}
-      {renderArrayInput('Favorite Drinks', 'favorite_drinks', newDrink, setNewDrink, 'Add a favorite drink')}
-      {renderArrayInput('Friends', 'friends', newFriend, setFriend, 'Add a friend')}
-      {renderArrayInput('Love Interests', 'love_interests', newLoveInterest, setLoveInterest, 'Add a love interest')}
-      {renderArrayInput('Cultural Groups', 'cultural_groups', newCulturalGroup, setCulturalGroup, 'Add a cultural group')}
-
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-1">
-            Religion
-          </label>
-          <input
-            type="text"
-            value={personalInfo.religion || ''}
-            onChange={(e) => setPersonalInfo({ ...personalInfo, religion: e.target.value })}
-            className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-            placeholder="Religious beliefs"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-foreground mb-1">
-            Worldview
-          </label>
-          <input
-            type="text"
-            value={personalInfo.worldview || ''}
-            onChange={(e) => setPersonalInfo({ ...personalInfo, worldview: e.target.value })}
-            className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-            placeholder="Personal philosophy or worldview"
-          />
-        </div>
-      </div>
-    </div>
+    </form>
   );
 }

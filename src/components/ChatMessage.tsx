@@ -1,179 +1,238 @@
-import React, { memo, useState, lazy, Suspense } from 'react';
+import React, { useState } from 'react';
+import { formatDateTime } from '../lib/utils';
+import LazyHighlighter from './syntax/LazyHighlighter';
+import { SearchResults } from './SearchResult';
+import { useMessageStore } from '../store/chat';
+import { Copy, RotateCcw, ChevronLeft, ChevronRight } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Copy, Check } from 'lucide-react';
-import type { Message } from '../types';
 
-// Lazy load syntax highlighter components
-const LazyHighlighter = lazy(() => import('./syntax/LazyHighlighter'));
-
-interface ChatMessageProps {
-  message: Message;
-  isStreaming?: boolean;
+interface MessageProps {
+  message: {
+    id: string;
+    content: string;
+    role: 'user' | 'assistant' | 'system';
+    created_at: string;
+    files?: string[];
+    versions?: string[];
+  };
 }
 
-interface CodeBlockProps {
-  language: string;
-  value: string;
+interface SearchResultData {
+  summary: string;
+  sources: Array<{
+    title: string;
+    link: string;
+    snippet: string;
+    source: string;
+    relevanceScore: number;
+  }>;
+  followUps: Array<{
+    text: string;
+    type: 'clarification' | 'deeper' | 'related';
+  }>;
 }
 
-// Memoize CodeBlock to prevent unnecessary re-renders
-const CodeBlock = memo(({ language, value }: CodeBlockProps) => {
-  const [copied, setCopied] = useState(false);
+export function ChatMessage({ message }: MessageProps) {
+  const isSystem = message.role === 'system';
+  const isUser = message.role === 'user';
+  const isAssistant = message.role === 'assistant';
+  const hasFiles = message.files && message.files.length > 0;
+  const hasCode = message.content.includes('```');
+  const sendMessage = useMessageStore(state => state.sendMessage);
+  const [currentVersion, setCurrentVersion] = useState(0);
+  const [isCopied, setIsCopied] = useState(false);
+  const versions = message.versions || [message.content];
 
-  const copyToClipboard = async () => {
+  // Try to parse search results from system messages
+  let searchResults: SearchResultData | null = null;
+  if (isSystem && message.content.startsWith('{')) {
     try {
-      await navigator.clipboard.writeText(value);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      const parsed = JSON.parse(message.content);
+      if (parsed.type === 'search_results') {
+        searchResults = parsed.data;
+      }
+    } catch (e) {
+      // Not search results JSON, continue with normal rendering
+      console.debug('Not search results:', e);
+    }
+  }
+
+  const extractCodeBlock = (content: string) => {
+    const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/;
+    const match = content.match(codeBlockRegex);
+    if (match) {
+      return {
+        language: match[1] || 'text',
+        code: match[2].trim()
+      };
+    }
+    return {
+      language: 'text',
+      code: content
+    };
+  };
+
+  const handleFollowUpClick = (question: string) => {
+    // Send follow-up question without AI response to avoid duplicate searches
+    sendMessage(question, [], undefined, false, true);
+  };
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(versions[currentVersion]);
+      setIsCopied(true);
+      setTimeout(() => setIsCopied(false), 2000);
     } catch (err) {
-      console.error('Failed to copy code:', err);
-      alert('Failed to copy code to clipboard');
+      console.error('Failed to copy text:', err);
     }
   };
 
-  return (
-    <div className="relative group">
-      <div className="absolute right-2 top-2 opacity-0 group-hover:opacity-100 transition-opacity">
-        <button
-          onClick={copyToClipboard}
-          className="p-1 rounded bg-gray-800 hover:bg-gray-700 text-white focus:ring-2 focus:ring-primary focus:outline-none"
-          aria-label={copied ? "Code copied" : "Copy code"}
-          aria-pressed={copied}
-          onKeyDown={(e) => e.key === 'Enter' && copyToClipboard()}
-          tabIndex={0}
-        >
-          {copied ? (
-            <Check className="h-4 w-4" />
-          ) : (
-            <Copy className="h-4 w-4" />
-          )}
-        </button>
-      </div>
-      <Suspense fallback={
-        <div 
-          className="animate-pulse bg-gray-700 rounded-lg p-4"
-          role="status"
-          aria-label="Loading code block"
-        >
-          <div className="h-4 bg-gray-600 rounded w-3/4 mb-2"></div>
-          <div className="h-4 bg-gray-600 rounded w-1/2"></div>
-        </div>
-      }>
-        <LazyHighlighter language={language} code={value} />
-      </Suspense>
-    </div>
-  );
-});
+  const handleRegenerate = async () => {
+    if (!isAssistant) return;
+    // Find the user's message that triggered this response
+    const messages = useMessageStore.getState().messages;
+    const index = messages.findIndex(m => m.id === message.id);
+    if (index > 0) {
+      const userMessage = messages[index - 1];
+      // Regenerate response
+      await sendMessage(userMessage.content, userMessage.files, userMessage.context_id);
+    }
+  };
 
-CodeBlock.displayName = 'CodeBlock';
-
-// Memoize markdown components to prevent unnecessary re-renders
-const markdownComponents = {
-  code({ node, inline, className, children, ...props }: any) {
-    const match = /language-(\w+)/.exec(className || '');
-    const language = match ? match[1] : '';
-    const value = String(children).replace(/\n$/, '');
-
-    if (!inline && match) {
+  const renderContent = () => {
+    if (searchResults) {
       return (
-        <CodeBlock
-          language={language}
-          value={value}
+        <SearchResults
+          summary={searchResults.summary}
+          sources={searchResults.sources}
+          followUps={searchResults.followUps}
+          onFollowUpClick={handleFollowUpClick}
+        />
+      );
+    }
+
+    if (hasCode) {
+      const codeBlock = extractCodeBlock(versions[currentVersion]);
+      return (
+        <LazyHighlighter
+          language={codeBlock.language}
+          code={codeBlock.code}
         />
       );
     }
 
     return (
-      <code
-        className={`${className} px-1.5 py-0.5 rounded bg-opacity-20 bg-gray-700 focus:ring-2 focus:ring-primary focus:outline-none`}
-        {...props}
-      >
-        {children}
-      </code>
-    );
-  },
-  p: memo(({ children }: { children: React.ReactNode }) => (
-    <p className="mb-4 last:mb-0">{children}</p>
-  )),
-  ul: memo(({ children }: { children: React.ReactNode }) => (
-    <ul className="mb-4 list-disc pl-6">{children}</ul>
-  )),
-  ol: memo(({ children }: { children: React.ReactNode }) => (
-    <ol className="mb-4 list-decimal pl-6">{children}</ol>
-  )),
-  li: memo(({ children }: { children: React.ReactNode }) => (
-    <li className="mb-1">{children}</li>
-  )),
-  blockquote: memo(({ children }: { children: React.ReactNode }) => (
-    <blockquote className="border-l-4 border-gray-300 pl-4 italic mb-4">
-      {children}
-    </blockquote>
-  )),
-  table: memo(({ children }: { children: React.ReactNode }) => (
-    <div className="overflow-x-auto mb-4">
-      <table className="min-w-full divide-y divide-gray-300">
-        {children}
-      </table>
-    </div>
-  )),
-  th: memo(({ children }: { children: React.ReactNode }) => (
-    <th className="px-3 py-2 text-left font-semibold bg-gray-100">
-      {children}
-    </th>
-  )),
-  td: memo(({ children }: { children: React.ReactNode }) => (
-    <td className="px-3 py-2 border-t">{children}</td>
-  )),
-};
-
-// Memoize the entire ChatMessage component
-export const ChatMessage = memo(({ message, isStreaming }: ChatMessageProps) => {
-  const isUser = message.role === 'user';
-
-  return (
-    <div 
-      className={`flex gap-4 ${isUser ? 'justify-end' : 'justify-start'}`}
-      role="listitem"
-    >
-      <div
-        className={`message-bubble flex max-w-[80%] rounded-lg px-4 py-3 ${
-          isUser
-            ? 'bg-primary text-button-text focus-within:ring-2 focus-within:ring-primary-light' 
-            : 'bg-muted text-foreground'
-        }`}
-        style={{
-          borderRadius: isUser ? '20px 4px 20px 20px' : '4px 20px 20px 20px',
+      <ReactMarkdown
+        remarkPlugins={[remarkGfm]}
+        className="prose prose-invert max-w-none"
+        components={{
+          code({ node, inline, className, children, ...props }) {
+            if (inline) {
+              return (
+                <code className="bg-muted/20 rounded px-1 py-0.5" {...props}>
+                  {children}
+                </code>
+              );
+            }
+            return (
+              <LazyHighlighter
+                language={(className || '').replace('language-', '')}
+                code={String(children).replace(/\n$/, '')}
+              />
+            );
+          }
         }}
       >
-        <div 
-          className="w-full"
-          role={isUser ? "complementary" : "main"}
-          aria-label={`${isUser ? "Your" : "Assistant's"} message`}
-        >
-          {isStreaming ? (
-            <div 
-              className="flex items-center gap-1"
-              role="status"
-              aria-label="Assistant is typing"
-            >
-              <div className="h-2 w-2 rounded-full bg-current animate-pulse" />
-              <div className="h-2 w-2 rounded-full bg-current animate-pulse delay-75" />
-              <div className="h-2 w-2 rounded-full bg-current animate-pulse delay-150" />
-            </div>
-          ) : (
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              className="markdown-content whitespace-pre-wrap text-base leading-relaxed focus:outline-none"
-              components={markdownComponents}
-            >
-              {message.content}
-            </ReactMarkdown>
-          )}
-        </div>
+        {versions[currentVersion]}
+      </ReactMarkdown>
+    );
+  };
+
+  return (
+    <div className={`px-4 py-2 ${isUser ? 'flex justify-end' : ''}`}>
+      {/* Message Header */}
+      <div className={`flex items-center gap-2 text-sm text-muted-foreground mb-1 ${isUser ? 'justify-end' : ''}`}>
+        <span className="font-medium">
+          {isUser ? 'You' : isSystem ? 'System' : 'Assistant'}
+        </span>
       </div>
+
+      {/* User Message */}
+      {isUser && (
+        <div className="inline-block max-w-[80%] bg-primary/90 text-primary-foreground rounded-[20px] px-4 py-2">
+          <p>{message.content}</p>
+        </div>
+      )}
+
+      {/* Assistant Message */}
+      {isAssistant && (
+        <div className="relative">
+          <div className="absolute right-0 top-2 flex items-center gap-2">
+            {versions.length > 1 && (
+              <div className="flex items-center gap-1 text-muted-foreground">
+                <button
+                  onClick={() => setCurrentVersion(v => Math.max(0, v - 1))}
+                  disabled={currentVersion === 0}
+                  className="p-1 hover:text-foreground disabled:opacity-50"
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </button>
+                <span className="text-sm">
+                  {currentVersion + 1}/{versions.length}
+                </span>
+                <button
+                  onClick={() => setCurrentVersion(v => Math.min(versions.length - 1, v + 1))}
+                  disabled={currentVersion === versions.length - 1}
+                  className="p-1 hover:text-foreground disabled:opacity-50"
+                >
+                  <ChevronRight className="h-4 w-4" />
+                </button>
+              </div>
+            )}
+            <button
+              onClick={handleCopy}
+              className="p-1 text-muted-foreground hover:text-foreground"
+              title={isCopied ? 'Copied!' : 'Copy to clipboard'}
+            >
+              <Copy className="h-4 w-4" />
+            </button>
+            <button
+              onClick={handleRegenerate}
+              className="p-1 text-muted-foreground hover:text-foreground"
+              title="Regenerate response"
+            >
+              <RotateCcw className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="pr-24">
+            {renderContent()}
+          </div>
+        </div>
+      )}
+
+      {/* System Message */}
+      {isSystem && (
+        <div className="text-foreground">
+          {renderContent()}
+        </div>
+      )}
+
+      {/* File Attachments */}
+      {hasFiles && (
+        <div className="mt-2 space-y-1">
+          {message.files?.map((file, index) => (
+            <div
+              key={index}
+              className="flex items-center gap-2 text-sm text-muted-foreground"
+            >
+              <span>📎</span>
+              <span>{file.split('/').pop()}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
-});
-
-ChatMessage.displayName = 'ChatMessage';
+}
