@@ -1,8 +1,7 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { format, isToday, isYesterday, isSameDay, parseISO } from 'date-fns';
-import { Search, X, MoreVertical, Pin, Trash2, Edit2 } from 'lucide-react';
+import { Search, X, MoreVertical, Pin, Trash2, Edit2, MessageSquare } from 'lucide-react';
 import { useThreadStore } from '../store/chat';
-import { Virtuoso } from 'react-virtuoso';
 
 interface GroupedThread {
   date: Date;
@@ -150,9 +149,18 @@ function ThreadActions({ thread, onClose }: ThreadActionsProps) {
 }
 
 export function ChatHistory() {
-  const { threads, loading, switchThread, currentThreadId } = useThreadStore();
+  const { threads, loading, switchThread, currentThreadId, fetchThreads } = useThreadStore();
   const [searchTerm, setSearchTerm] = useState('');
   const [activeThreadMenu, setActiveThreadMenu] = useState<string | null>(null);
+
+  // Fetch threads on mount
+  useEffect(() => {
+    fetchThreads();
+  }, [fetchThreads]);
+
+  const handleNewChat = () => {
+    switchThread('');
+  };
 
   const filteredThreads = useMemo(() => {
     if (!searchTerm.trim()) return threads;
@@ -194,71 +202,16 @@ export function ChatHistory() {
     );
   }
 
-  const renderThread = (index: number) => {
-    const group = groupedThreads[index];
-    return (
-      <div key={group.date.toISOString()}>
-        <div className="sticky top-0 bg-background/95 backdrop-blur-sm border-b border-muted px-4 py-2">
-          <h3 className="text-sm font-medium text-muted-foreground">
-            {formatDate(group.date)}
-          </h3>
-        </div>
-        <div className="divide-y divide-muted">
-          {group.threads.map((thread) => (
-            <div
-              key={thread.id}
-              className={`relative flex items-center justify-between px-4 py-3 hover:bg-muted transition-colors ${
-                currentThreadId === thread.id ? 'bg-muted' : ''
-              }`}
-            >
-              <button
-                onClick={() => switchThread(thread.id)}
-                className="flex-1 text-left"
-              >
-                <div className="flex items-center space-x-2">
-                  {thread.pinned && (
-                    <Pin className="h-3 w-3 text-primary" />
-                  )}
-                  <p className="text-sm text-foreground font-medium line-clamp-1">
-                    <HighlightedText 
-                      text={thread.title || 'New Conversation'} 
-                      highlight={searchTerm}
-                    />
-                  </p>
-                </div>
-                <p className="text-xs text-muted-foreground mt-1">
-                  {thread.updated_at ? (
-                    format(parseISO(thread.updated_at), 'h:mm a')
-                  ) : (
-                    '--:-- --'
-                  )}
-                </p>
-              </button>
-              <div className="relative">
-                <button
-                  onClick={() => setActiveThreadMenu(activeThreadMenu === thread.id ? null : thread.id)}
-                  className="p-1 rounded hover:bg-muted-foreground/10"
-                >
-                  <MoreVertical className="h-4 w-4 text-muted-foreground" />
-                </button>
-                {activeThreadMenu === thread.id && (
-                  <ThreadActions
-                    thread={thread}
-                    onClose={() => setActiveThreadMenu(null)}
-                  />
-                )}
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  };
-
   return (
     <div className="flex flex-col h-[calc(100vh-5rem)]">
       <div className="p-4 border-b border-muted">
-        <h2 className="text-lg font-semibold text-foreground mb-3">Chat History</h2>
+        <button
+          onClick={handleNewChat}
+          className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-button-text bg-primary rounded-lg hover:bg-secondary transition-colors mb-3"
+        >
+          <MessageSquare className="h-4 w-4" />
+          New Chat
+        </button>
         <div className="relative">
           <input
             type="text"
@@ -278,14 +231,67 @@ export function ChatHistory() {
           )}
         </div>
       </div>
-      <div className="flex-1">
+      <div className="flex-1 overflow-auto">
         {groupedThreads.length > 0 ? (
-          <Virtuoso
-            data={groupedThreads}
-            itemContent={renderThread}
-            className="h-full"
-            overscan={5}
-          />
+          <div>
+            {groupedThreads.map(group => (
+              <div key={group.date.toISOString()}>
+                <div className="sticky top-0 bg-background/95 backdrop-blur-sm border-b border-muted px-4 py-2">
+                  <h3 className="text-sm font-medium text-muted-foreground">
+                    {formatDate(group.date)}
+                  </h3>
+                </div>
+                <div className="divide-y divide-muted">
+                  {group.threads.map((thread) => (
+                    <div
+                      key={thread.id}
+                      className={`relative flex items-center justify-between px-4 py-3 hover:bg-muted transition-colors ${
+                        currentThreadId === thread.id ? 'bg-muted' : ''
+                      }`}
+                    >
+                      <button
+                        onClick={() => switchThread(thread.id)}
+                        className="flex-1 text-left"
+                      >
+                        <div className="flex items-center space-x-2">
+                          {thread.pinned && (
+                            <Pin className="h-3 w-3 text-primary" />
+                          )}
+                          <p className="text-sm text-foreground font-medium line-clamp-1">
+                            <HighlightedText 
+                              text={thread.title || 'New Conversation'} 
+                              highlight={searchTerm}
+                            />
+                          </p>
+                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {thread.updated_at ? (
+                            format(parseISO(thread.updated_at), 'h:mm a')
+                          ) : (
+                            '--:-- --'
+                          )}
+                        </p>
+                      </button>
+                      <div className="relative">
+                        <button
+                          onClick={() => setActiveThreadMenu(activeThreadMenu === thread.id ? null : thread.id)}
+                          className="p-1 rounded hover:bg-muted-foreground/10"
+                        >
+                          <MoreVertical className="h-4 w-4 text-muted-foreground" />
+                        </button>
+                        {activeThreadMenu === thread.id && (
+                          <ThreadActions
+                            thread={thread}
+                            onClose={() => setActiveThreadMenu(null)}
+                          />
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
         ) : (
           <div className="p-4 text-center text-muted-foreground text-sm">
             {threads.length === 0 

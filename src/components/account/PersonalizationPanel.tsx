@@ -1,5 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { usePersonalizationStore } from '../../store/personalization';
+import { useAuthStore } from '../../store/auth';
 import { FileManager } from '../context/FileManager';
 import { PersonalizationChatbot } from '../PersonalizationChatbot';
 import { generatePersonalizationPDF } from '../../lib/pdf-generator';
@@ -7,38 +8,92 @@ import { VoiceRecorder } from '../VoiceRecorder';
 import { MessageSquare, X, Mic, Save } from 'lucide-react';
 import type { PersonalInfo } from '../../types';
 import { supabase } from '../../lib/supabase';
-import { AIPersonalizationService } from '../../lib/ai-personalization';
 
 export function PersonalizationPanel() {
   const { 
-    personalInfo, loading, error, updatePersonalInfo 
+    personalInfo = {}, 
+    loading: personalizationLoading, 
+    error, 
+    updatePersonalInfo, 
+    initialized: personalizationInitialized,
+    init: initPersonalization
   } = usePersonalizationStore();
   
+  const { initialized: authInitialized, user } = useAuthStore();
   const [isRecording, setIsRecording] = useState(false);
-  const [showChatbot, setShowChatbot] = useState(false);
+  const [showChatbot, setShowChatbot] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
 
+  // Initialize on mount if authenticated
   useEffect(() => {
-    setShowChatbot(true);
-  }, []);
+    let mounted = true;
+    if (authInitialized && user && !personalizationInitialized && !personalizationLoading) {
+      initPersonalization().catch(error => {
+        if (mounted) {
+          console.error('Failed to initialize personalization:', error);
+        }
+      });
+    }
+    return () => { mounted = false; };
+  }, [authInitialized, user, personalizationInitialized, personalizationLoading, initPersonalization]);
 
   const handleSave = async () => {
+    if (isSaving || !user) return;
+    setIsSaving(true);
     try {
-      const aiService = AIPersonalizationService.getInstance();
-      const document = await aiService.generatePersonalizationDocument(
-        personalInfo,
-        { currentStep: 0, messages: [], extractedInfo: personalInfo, isProcessing: false, error: null }
-      );
-
+      // Generate PDF from form fields
       const blob = generatePersonalizationPDF(personalInfo);
-      const url = URL.createObjectURL(blob);
-      window.open(url, '_blank');
-      // Clean up
-      URL.revokeObjectURL(url);
+      const file = new File([blob], 'preferences-profile.pdf', { type: 'application/pdf' });
+      const filePath = `${Date.now()}-preferences-profile.pdf`;
+
+      // Upload to storage
+      const { error: uploadError } = await supabase.storage
+        .from('user-uploads')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      // Update personalInfo with new file
+      const currentFiles = personalInfo.files || [];
+      if (!currentFiles.includes(filePath)) {
+        await updatePersonalInfo({
+          ...personalInfo,
+          files: [...currentFiles, filePath]
+        });
+      }
     } catch (error) {
       console.error('Error saving personalization:', error);
       throw error;
+    } finally {
+      setIsSaving(false);
     }
   };
+
+  if (!authInitialized || !user) {
+    return (
+      <div className="flex items-center justify-center h-32">
+        <div className="text-lg text-muted-foreground">
+          Please log in to access personalization.
+        </div>
+      </div>
+    );
+  }
+
+  if (!personalizationInitialized || personalizationLoading) {
+    return (
+      <div className="flex items-center justify-center h-32">
+        <div className={`text-lg text-muted-foreground ${personalizationLoading ? 'animate-pulse' : ''}`}>
+          {error ? (
+            <div className="text-destructive">
+              Error loading personalization data.
+            </div>
+          ) : (
+            "Loading personalization data..."
+          )}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -47,11 +102,11 @@ export function PersonalizationPanel() {
         <div className="flex items-center gap-4">
           <button
             onClick={handleSave}
-            disabled={loading}
+            disabled={isSaving || personalizationLoading}
             className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-primary text-button-text rounded-md hover:bg-secondary transition-colors disabled:opacity-50"
           >
             <Save className="h-4 w-4" />
-            Save & View Profile
+            {isSaving ? 'Saving...' : 'Save & View Profile'}
           </button>
           <FileManager />
         </div>
@@ -77,7 +132,7 @@ export function PersonalizationPanel() {
                   value={personalInfo.name || ''}
                   onChange={(e) => updatePersonalInfo({ ...personalInfo, name: e.target.value })}
                   className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  disabled={loading}
+                  disabled={personalizationLoading}
                 />
               </div>
               <div>
@@ -87,7 +142,7 @@ export function PersonalizationPanel() {
                   value={personalInfo.email || ''}
                   onChange={(e) => updatePersonalInfo({ ...personalInfo, email: e.target.value })}
                   className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  disabled={loading}
+                  disabled={personalizationLoading}
                 />
               </div>
               <div>
@@ -97,7 +152,7 @@ export function PersonalizationPanel() {
                   value={personalInfo.phone || ''}
                   onChange={(e) => updatePersonalInfo({ ...personalInfo, phone: e.target.value })}
                   className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  disabled={loading}
+                  disabled={personalizationLoading}
                 />
               </div>
             </div>
@@ -117,7 +172,7 @@ export function PersonalizationPanel() {
                     address: { ...personalInfo.address, street: e.target.value }
                   })}
                   className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  disabled={loading}
+                  disabled={personalizationLoading}
                 />
               </div>
               <div>
@@ -130,7 +185,7 @@ export function PersonalizationPanel() {
                     address: { ...personalInfo.address, city: e.target.value }
                   })}
                   className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  disabled={loading}
+                  disabled={personalizationLoading}
                 />
               </div>
               <div>
@@ -143,7 +198,7 @@ export function PersonalizationPanel() {
                     address: { ...personalInfo.address, state: e.target.value }
                   })}
                   className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  disabled={loading}
+                  disabled={personalizationLoading}
                 />
               </div>
               <div>
@@ -156,7 +211,7 @@ export function PersonalizationPanel() {
                     address: { ...personalInfo.address, zip: e.target.value }
                   })}
                   className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  disabled={loading}
+                  disabled={personalizationLoading}
                 />
               </div>
               <div>
@@ -169,7 +224,7 @@ export function PersonalizationPanel() {
                     address: { ...personalInfo.address, country: e.target.value }
                   })}
                   className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  disabled={loading}
+                  disabled={personalizationLoading}
                 />
               </div>
             </div>
@@ -186,7 +241,7 @@ export function PersonalizationPanel() {
                   value={personalInfo.job || ''}
                   onChange={(e) => updatePersonalInfo({ ...personalInfo, job: e.target.value })}
                   className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  disabled={loading}
+                  disabled={personalizationLoading}
                 />
               </div>
               <div>
@@ -196,17 +251,17 @@ export function PersonalizationPanel() {
                   value={personalInfo.company || ''}
                   onChange={(e) => updatePersonalInfo({ ...personalInfo, company: e.target.value })}
                   className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  disabled={loading}
+                  disabled={personalizationLoading}
                 />
               </div>
               <div className="col-span-2">
                 <label className="block text-sm font-medium text-foreground mb-2">Projects</label>
                 <textarea
-                  value={personalInfo.projects || ''}
-                  onChange={(e) => updatePersonalInfo({ ...personalInfo, projects: e.target.value })}
+                  value={personalInfo.projects?.join('\n') || ''}
+                  onChange={(e) => updatePersonalInfo({ ...personalInfo, projects: e.target.value.split('\n') })}
                   className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
                   rows={3}
-                  disabled={loading}
+                  disabled={personalizationLoading}
                 />
               </div>
             </div>
@@ -223,7 +278,7 @@ export function PersonalizationPanel() {
                   value={personalInfo.height || ''}
                   onChange={(e) => updatePersonalInfo({ ...personalInfo, height: e.target.value })}
                   className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  disabled={loading}
+                  disabled={personalizationLoading}
                 />
               </div>
               <div>
@@ -233,7 +288,7 @@ export function PersonalizationPanel() {
                   value={personalInfo.weight || ''}
                   onChange={(e) => updatePersonalInfo({ ...personalInfo, weight: e.target.value })}
                   className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  disabled={loading}
+                  disabled={personalizationLoading}
                 />
               </div>
               <div>
@@ -243,7 +298,7 @@ export function PersonalizationPanel() {
                   value={personalInfo.shoe_size || ''}
                   onChange={(e) => updatePersonalInfo({ ...personalInfo, shoe_size: e.target.value })}
                   className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  disabled={loading}
+                  disabled={personalizationLoading}
                 />
               </div>
               <div>
@@ -256,7 +311,7 @@ export function PersonalizationPanel() {
                     clothing_sizes: { ...personalInfo.clothing_sizes, top: e.target.value }
                   })}
                   className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  disabled={loading}
+                  disabled={personalizationLoading}
                 />
               </div>
               <div>
@@ -269,7 +324,7 @@ export function PersonalizationPanel() {
                     clothing_sizes: { ...personalInfo.clothing_sizes, bottom: e.target.value }
                   })}
                   className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  disabled={loading}
+                  disabled={personalizationLoading}
                 />
               </div>
             </div>
@@ -290,7 +345,7 @@ export function PersonalizationPanel() {
                   })}
                   className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
                   placeholder="What are your interests?"
-                  disabled={loading}
+                  disabled={personalizationLoading}
                 />
               </div>
               <div>
@@ -304,7 +359,7 @@ export function PersonalizationPanel() {
                   })}
                   className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
                   placeholder="What are your hobbies?"
-                  disabled={loading}
+                  disabled={personalizationLoading}
                 />
               </div>
               <div>
@@ -318,7 +373,7 @@ export function PersonalizationPanel() {
                   })}
                   className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
                   placeholder="What foods do you like?"
-                  disabled={loading}
+                  disabled={personalizationLoading}
                 />
               </div>
               <div>
@@ -332,7 +387,7 @@ export function PersonalizationPanel() {
                   })}
                   className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
                   placeholder="What drinks do you like?"
-                  disabled={loading}
+                  disabled={personalizationLoading}
                 />
               </div>
             </div>
@@ -353,7 +408,7 @@ export function PersonalizationPanel() {
                   })}
                   className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
                   placeholder="Tell me about your family"
-                  disabled={loading}
+                  disabled={personalizationLoading}
                 />
               </div>
               <div>
@@ -367,7 +422,7 @@ export function PersonalizationPanel() {
                   })}
                   className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
                   placeholder="Tell me about your friends"
-                  disabled={loading}
+                  disabled={personalizationLoading}
                 />
               </div>
               <div>
@@ -381,7 +436,7 @@ export function PersonalizationPanel() {
                   })}
                   className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
                   placeholder="Tell me about your romantic interests"
-                  disabled={loading}
+                  disabled={personalizationLoading}
                 />
               </div>
               <div>
@@ -395,7 +450,7 @@ export function PersonalizationPanel() {
                   })}
                   className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
                   placeholder="What cultural groups do you identify with?"
-                  disabled={loading}
+                  disabled={personalizationLoading}
                 />
               </div>
             </div>
@@ -412,7 +467,7 @@ export function PersonalizationPanel() {
                   value={personalInfo.religion || ''}
                   onChange={(e) => updatePersonalInfo({ ...personalInfo, religion: e.target.value })}
                   className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  disabled={loading}
+                  disabled={personalizationLoading}
                 />
               </div>
               <div>
@@ -422,7 +477,7 @@ export function PersonalizationPanel() {
                   value={personalInfo.worldview || ''}
                   onChange={(e) => updatePersonalInfo({ ...personalInfo, worldview: e.target.value })}
                   className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  disabled={loading}
+                  disabled={personalizationLoading}
                 />
               </div>
               <div>
@@ -432,7 +487,7 @@ export function PersonalizationPanel() {
                   value={personalInfo.mbti || ''}
                   onChange={(e) => updatePersonalInfo({ ...personalInfo, mbti: e.target.value })}
                   className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  disabled={loading}
+                  disabled={personalizationLoading}
                 />
               </div>
             </div>
@@ -453,7 +508,7 @@ export function PersonalizationPanel() {
                   })}
                   className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
                   placeholder="What are your goals?"
-                  disabled={loading}
+                  disabled={personalizationLoading}
                 />
               </div>
               <div>
@@ -467,7 +522,7 @@ export function PersonalizationPanel() {
                   })}
                   className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
                   placeholder="What are your dreams?"
-                  disabled={loading}
+                  disabled={personalizationLoading}
                 />
               </div>
             </div>
@@ -487,7 +542,7 @@ export function PersonalizationPanel() {
                 })}
                 className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
                 placeholder="Any health concerns?"
-                disabled={loading}
+                disabled={personalizationLoading}
               />
             </div>
           </div>
@@ -507,7 +562,7 @@ export function PersonalizationPanel() {
                   })}
                   className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
                   placeholder="Any keywords that describe you?"
-                  disabled={loading}
+                  disabled={personalizationLoading}
                 />
               </div>
               <div>
@@ -517,7 +572,7 @@ export function PersonalizationPanel() {
                   onChange={(e) => updatePersonalInfo({ ...personalInfo, backstory: e.target.value })}
                   className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
                   rows={4}
-                  disabled={loading}
+                  disabled={personalizationLoading}
                 />
               </div>
               <div>
@@ -527,7 +582,7 @@ export function PersonalizationPanel() {
                   onChange={(e) => updatePersonalInfo({ ...personalInfo, freeform: e.target.value })}
                   className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
                   rows={4}
-                  disabled={loading}
+                  disabled={personalizationLoading}
                 />
               </div>
             </div>
@@ -539,7 +594,7 @@ export function PersonalizationPanel() {
       <button
         onClick={() => setShowChatbot(!showChatbot)}
         className="fixed bottom-6 right-6 p-4 bg-primary text-button-text rounded-full shadow-lg hover:bg-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        disabled={loading}
+        disabled={personalizationLoading}
       >
         <MessageSquare className="h-6 w-6" />
       </button>

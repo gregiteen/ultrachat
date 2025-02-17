@@ -20,6 +20,7 @@ export interface VoiceSample {
   file_name: string;
   mime_type: string;
   size_bytes: number;
+  preview_url?: string;
   duration: number;
 }
 
@@ -42,6 +43,13 @@ export interface VoiceSettings {
   style?: number;
   use_speaker_boost?: boolean;
   optimize_streaming_latency?: 0 | 1 | 2 | 3 | 4;
+}
+
+export interface VoiceModel {
+  model_id: string;
+  name: string;
+  description: string;
+  token_cost_factor: number;
 }
 
 export interface TextToSpeechRequest {
@@ -69,6 +77,13 @@ export interface VoiceGenerationOptions {
   text: string;
   design?: VoiceDesign;
   labels?: Record<string, string>;
+}
+
+export interface UserSubscription {
+  tier: string;
+  character_count: number;
+  character_limit: number;
+  can_extend_character_limit: boolean;
 }
 
 class ElevenLabsAPI {
@@ -322,6 +337,29 @@ class ElevenLabsAPI {
 
   async getSharedVoice(voiceId: string): Promise<Voice> {
     return this.request<Voice>(`/shared-voices/${voiceId}`);
+  }
+
+  async getModels(): Promise<VoiceModel[]> {
+    const data = await this.request<{ models: VoiceModel[] }>('/models');
+    return data.models;
+  }
+
+  async getUserSubscription(): Promise<UserSubscription> {
+    return this.request<UserSubscription>('/user/subscription');
+  }
+
+  async getVoiceSamples(voiceId: string): Promise<VoiceSample[]> {
+    const data = await this.request<{ samples: VoiceSample[] }>(`/voices/${voiceId}/samples`);
+    return data.samples;
+  }
+
+  async addVoiceSample(voiceId: string, file: File): Promise<VoiceSample> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.request<VoiceSample>(`/voices/${voiceId}/samples/add`, {
+      method: 'POST',
+      body: formData,
+    });
   }
 }
 

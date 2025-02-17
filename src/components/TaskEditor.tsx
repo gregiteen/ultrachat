@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import DatePicker from 'react-datepicker';
 import Select from 'react-select';
-import { Calendar, Clock, Tag, Plus, Trash2, MessageSquare } from 'lucide-react';
+import { Calendar, Clock, Tag, Plus, Trash2, MessageSquare, Repeat, Link, Bell } from 'lucide-react';
 import "react-datepicker/dist/react-datepicker.css";
 import type { Task } from '../types';
 import { useTaskStore } from '../store/task';
@@ -25,6 +25,9 @@ interface SelectOption<T> {
   color?: string;
 }
 
+type AutomationType = NonNullable<Task['automation_rules']>['type'];
+type AutomationConfig = NonNullable<Task['automation_rules']>['config'];
+
 const priorityOptions: SelectOption<Task['priority']>[] = [
   { value: 'low', label: 'Low', color: '#10B981' },
   { value: 'medium', label: 'Medium', color: '#F59E0B' },
@@ -37,11 +40,26 @@ const statusOptions: SelectOption<Task['status']>[] = [
   { value: 'done', label: 'Done' }
 ];
 
+const automationTypeOptions: SelectOption<AutomationType>[] = [
+  { value: 'recurring', label: 'Recurring Task' },
+  { value: 'dependent', label: 'Dependent Task' },
+  { value: 'deadline', label: 'Deadline Notifications' }
+];
+
+const frequencyOptions: SelectOption<string>[] = [
+  { value: 'daily', label: 'Daily' },
+  { value: 'weekly', label: 'Weekly' },
+  { value: 'biweekly', label: 'Bi-weekly' },
+  { value: 'monthly', label: 'Monthly' }
+];
+
 export function TaskEditor({ onClose, onSave, initialTask }: TaskEditorProps) {
   type PriorityOption = SelectOption<Task['priority']>;
   type StatusOption = SelectOption<Task['status']>;
+  type AutomationTypeOption = SelectOption<AutomationType>;
+  type FrequencyOption = SelectOption<string>;
 
-  const { processTaskRequest } = useTaskStore();
+  const { processTaskRequest, listTasks } = useTaskStore();
   const [title, setTitle] = useState(initialTask?.title || '');
   const [description, setDescription] = useState(initialTask?.description || '');
   const [dueDate, setDueDate] = useState<Date | null>(
@@ -54,10 +72,45 @@ export function TaskEditor({ onClose, onSave, initialTask }: TaskEditorProps) {
     statusOptions.find(opt => opt.value === initialTask?.status) || statusOptions[0]
   );
   const [subtasks, setSubtasks] = useState<Subtask[]>([]);
+  const [estimatedDuration, setEstimatedDuration] = useState(initialTask?.estimated_duration || '');
   const [loading, setLoading] = useState(false);
   const [showNLInput, setShowNLInput] = useState(false);
   const [nlInput, setNLInput] = useState('');
   const [processingNL, setProcessingNL] = useState(false);
+
+  // Automation states
+  const [showAutomation, setShowAutomation] = useState(false);
+  const [automationType, setAutomationType] = useState<AutomationTypeOption | null>(
+    initialTask?.automation_rules ? {
+      value: initialTask.automation_rules.type,
+      label: automationTypeOptions.find(opt => opt.value === initialTask.automation_rules?.type)?.label || ''
+    } : null
+  );
+  const [frequency, setFrequency] = useState<FrequencyOption | null>(
+    initialTask?.automation_rules?.config.frequency ? {
+      value: initialTask.automation_rules.config.frequency,
+      label: frequencyOptions.find(opt => opt.value === initialTask.automation_rules?.config.frequency)?.label || ''
+    } : null
+  );
+  const [dependencies, setDependencies] = useState<string[]>(
+    initialTask?.automation_rules?.config.dependsOn || []
+  );
+  const [notifyBefore, setNotifyBefore] = useState<number>(
+    initialTask?.automation_rules?.config.notifyBefore || 24
+  );
+  const [availableTasks, setAvailableTasks] = useState<Task[]>([]);
+
+  React.useEffect(() => {
+    const loadTasks = async () => {
+      try {
+        const tasks = await listTasks();
+        setAvailableTasks(tasks.filter(t => t.id !== initialTask?.id));
+      } catch (error) {
+        console.error('Error loading tasks:', error);
+      }
+    };
+    loadTasks();
+  }, [initialTask?.id, listTasks]);
 
   const handleNLSubmit = async () => {
     if (!nlInput.trim()) return;
@@ -65,7 +118,6 @@ export function TaskEditor({ onClose, onSave, initialTask }: TaskEditorProps) {
     try {
       const result = await processTaskRequest(nlInput);
       if (result.success) {
-        // The task will be created through the chain
         onClose();
       } else {
         console.error('Failed to process task:', result.message);
@@ -78,16 +130,20 @@ export function TaskEditor({ onClose, onSave, initialTask }: TaskEditorProps) {
   };
 
   const handleAddSubtask = () => {
-    setSubtasks([...subtasks, { title: '', status: 'todo' as const }]);
+    setSubtasks([...subtasks, { 
+      title: '', 
+      status: 'todo' as const,
+      estimated_duration: '1' // Default 1 hour
+    }]);
   };
 
   const handleRemoveSubtask = (index: number) => {
     setSubtasks(subtasks.filter((_, i) => i !== index));
   };
 
-  const handleUpdateSubtask = (index: number, title: string) => {
+  const handleUpdateSubtask = (index: number, updates: Partial<Subtask>) => {
     const newSubtasks = [...subtasks];
-    newSubtasks[index].title = title;
+    newSubtasks[index] = { ...newSubtasks[index], ...updates };
     setSubtasks(newSubtasks);
   };
 
@@ -103,7 +159,27 @@ export function TaskEditor({ onClose, onSave, initialTask }: TaskEditorProps) {
         due_date: dueDate?.toISOString(),
         priority: priority.value,
         status: status.value,
+        estimated_duration: estimatedDuration,
       };
+
+      // Add automation rules if configured
+      if (automationType) {
+        task.automation_rules = {
+          type: automationType.value,
+          status: 'active',
+          config: {
+            ...(automationType.value === 'recurring' && frequency 
+              ? { frequency: frequency.value }
+              : {}),
+            ...(automationType.value === 'dependent' && dependencies.length > 0
+              ? { dependsOn: dependencies }
+              : {}),
+            ...(automationType.value === 'deadline'
+              ? { notifyBefore }
+              : {})
+          }
+        };
+      }
 
       await onSave(task);
 
@@ -114,7 +190,8 @@ export function TaskEditor({ onClose, onSave, initialTask }: TaskEditorProps) {
             title: subtask.title,
             status: 'todo',
             priority: priority.value,
-            parent_id: task.id
+            parent_id: task.id,
+            estimated_duration: subtask.estimated_duration
           });
         }
       }
@@ -171,7 +248,7 @@ export function TaskEditor({ onClose, onSave, initialTask }: TaskEditorProps) {
 
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-      <div className="bg-white rounded-lg w-full max-w-md">
+      <div className="bg-white rounded-lg w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         <form onSubmit={handleSubmit} className="p-6 space-y-4">
           <div className="flex justify-between items-center mb-4">
             <h2 className="text-xl font-semibold text-gray-900">
@@ -264,20 +341,124 @@ export function TaskEditor({ onClose, onSave, initialTask }: TaskEditorProps) {
             </div>
           </div>
 
-          {initialTask && (
+          <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Status
+                Estimated Duration (hours)
               </label>
-              <Select
-                value={status}
-                onChange={(option) => option && setStatus(option)}
-                options={statusOptions}
-                className="react-select"
-                classNamePrefix="react-select"
+              <input
+                type="number"
+                min="0"
+                step="0.5"
+                value={estimatedDuration}
+                onChange={(e) => setEstimatedDuration(e.target.value)}
+                className="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                placeholder="Enter duration"
               />
             </div>
-          )}
+
+            {initialTask && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Status
+                </label>
+                <Select
+                  value={status}
+                  onChange={(option) => option && setStatus(option)}
+                  options={statusOptions}
+                  className="react-select"
+                  classNamePrefix="react-select"
+                />
+              </div>
+            )}
+          </div>
+
+          <div>
+            <div className="flex justify-between items-center mb-2">
+              <label className="block text-sm font-medium text-gray-700">
+                Automation
+              </label>
+              <button
+                type="button"
+                onClick={() => setShowAutomation(!showAutomation)}
+                className="text-blue-600 hover:text-blue-700"
+              >
+                {showAutomation ? 'Hide' : 'Show'}
+              </button>
+            </div>
+
+            {showAutomation && (
+              <div className="space-y-4 p-4 bg-gray-50 rounded-md">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Automation Type
+                  </label>
+                  <Select
+                    value={automationType}
+                    onChange={(option) => {
+                      setAutomationType(option);
+                      setFrequency(null);
+                      setDependencies([]);
+                    }}
+                    options={automationTypeOptions}
+                    className="react-select"
+                    classNamePrefix="react-select"
+                  />
+                </div>
+
+                {automationType?.value === 'recurring' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Frequency
+                    </label>
+                    <Select
+                      value={frequency}
+                      onChange={(option) => setFrequency(option)}
+                      options={frequencyOptions}
+                      className="react-select"
+                      classNamePrefix="react-select"
+                    />
+                  </div>
+                )}
+
+                {automationType?.value === 'dependent' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Dependencies
+                    </label>
+                    <Select
+                      isMulti
+                      value={availableTasks
+                        .filter(t => dependencies.includes(t.id))
+                        .map(t => ({ value: t.id, label: t.title }))}
+                      onChange={(options) => setDependencies(options.map(o => o.value))}
+                      options={availableTasks.map(t => ({
+                        value: t.id,
+                        label: t.title
+                      }))}
+                      className="react-select"
+                      classNamePrefix="react-select"
+                    />
+                  </div>
+                )}
+
+                {automationType?.value === 'deadline' && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      Notify Before (hours)
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      value={notifyBefore}
+                      onChange={(e) => setNotifyBefore(parseInt(e.target.value))}
+                      className="w-full rounded-md border border-gray-300 px-3 py-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
 
           <div>
             <div className="flex justify-between items-center mb-2">
@@ -298,9 +479,18 @@ export function TaskEditor({ onClose, onSave, initialTask }: TaskEditorProps) {
                   <input
                     type="text"
                     value={subtask.title}
-                    onChange={(e) => handleUpdateSubtask(index, e.target.value)}
+                    onChange={(e) => handleUpdateSubtask(index, { title: e.target.value })}
                     className="flex-1 rounded-md border border-gray-300 px-3 py-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                     placeholder="Subtask title"
+                  />
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.5"
+                    value={subtask.estimated_duration}
+                    onChange={(e) => handleUpdateSubtask(index, { estimated_duration: e.target.value })}
+                    className="w-24 rounded-md border border-gray-300 px-3 py-2 focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                    placeholder="Hours"
                   />
                   <button
                     type="button"

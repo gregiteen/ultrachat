@@ -3,23 +3,28 @@ import { FileUploader } from '../FileUploader';
 import { supabase } from '../../lib/supabase';
 import { File, Trash2, Download, Eye, Upload } from 'lucide-react';
 import { usePersonalizationStore } from '../../store/personalization';
+import { useAuthStore } from '../../store/auth';
 
 interface FileManagerProps {
   onFileSelect?: (file: string) => void;
 }
 
 export function FileManager({ onFileSelect }: FileManagerProps) {
-  const { personalInfo, updatePersonalInfo } = usePersonalizationStore();
-  const [files, setFiles] = useState<string[]>(personalInfo.files || []);
+  const { personalInfo, updatePersonalInfo, initialized: personalizationInitialized, loading: personalizationLoading } = usePersonalizationStore();
+  const { initialized: authInitialized, user } = useAuthStore();
+  const [files, setFiles] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<string | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   useEffect(() => {
-    setFiles(personalInfo.files || []);
-  }, [personalInfo.files]);
+    if (personalizationInitialized && authInitialized && user && !personalizationLoading) {
+      setFiles(personalInfo.files || []);
+    }
+  }, [personalInfo.files, personalizationInitialized, authInitialized, user, personalizationLoading]);
 
   const handleFileUpload = async (paths: string[]) => {
+    if (!user || uploading) return;
     setUploading(true);
     try {
       const newFiles = [...files, ...paths];
@@ -36,6 +41,7 @@ export function FileManager({ onFileSelect }: FileManagerProps) {
   };
 
   const handleFileDelete = async (filePath: string) => {
+    if (!user) return;
     try {
       // Delete from storage
       const { error: deleteError } = await supabase.storage
@@ -62,6 +68,7 @@ export function FileManager({ onFileSelect }: FileManagerProps) {
   };
 
   const handleFileDownload = async (filePath: string) => {
+    if (!user) return;
     try {
       const { data, error } = await supabase.storage
         .from('user-uploads')
@@ -84,6 +91,7 @@ export function FileManager({ onFileSelect }: FileManagerProps) {
   };
 
   const handleFilePreview = async (filePath: string) => {
+    if (!user) return;
     try {
       const { data } = await supabase.storage
         .from('user-uploads')
@@ -114,6 +122,30 @@ export function FileManager({ onFileSelect }: FileManagerProps) {
     }
   };
 
+  if (!authInitialized || !user) {
+    return (
+      <div className="bg-background border border-muted rounded-lg p-4 space-y-4">
+        <div className="flex items-center justify-center h-32">
+          <div className="text-lg text-muted-foreground">
+            Please log in to manage files.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!personalizationInitialized || personalizationLoading) {
+    return (
+      <div className="bg-background border border-muted rounded-lg p-4 space-y-4">
+        <div className="flex items-center justify-center h-32">
+          <div className="animate-pulse text-lg text-muted-foreground">
+            Loading files...
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="bg-background border border-muted rounded-lg p-4 space-y-4">
       <div className="flex items-center justify-between">
@@ -124,7 +156,7 @@ export function FileManager({ onFileSelect }: FileManagerProps) {
           className="flex items-center gap-2 px-4 py-2 bg-primary text-button-text rounded-md hover:bg-secondary transition-colors disabled:opacity-50"
         >
           <Upload className="h-4 w-4" />
-          Upload Files
+          {uploading ? 'Uploading...' : 'Upload Files'}
         </FileUploader>
       </div>
 

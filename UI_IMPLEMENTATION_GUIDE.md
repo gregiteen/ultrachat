@@ -1,270 +1,291 @@
-# UI/UX Modernization Implementation Guide
+# UI Implementation Guide
 
-## Directory Structure
+## Component Overview
 
-```
-src/
-├── design-system/
-│   ├── theme/
-│   │   ├── index.ts
-│   │   ├── types.ts
-│   │   ├── variants.ts
-│   │   └── utils.ts
-│   ├── components/
-│   │   ├── base/
-│   │   │   ├── Button/
-│   │   │   ├── Input/
-│   │   │   ├── Card/
-│   │   │   └── Typography/
-│   │   ├── layout/
-│   │   │   ├── Grid/
-│   │   │   ├── Container/
-│   │   │   └── Stack/
-│   │   └── feedback/
-│   │       ├── Toast/
-│   │       ├── Spinner/
-│   │       └── Progress/
-│   ├── hooks/
-│   │   ├── useTheme.ts
-│   │   ├── useAnimation.ts
-│   │   └── useMediaQuery.ts
-│   └── animations/
-│       ├── transitions.ts
-│       ├── variants.ts
-│       └── utils.ts
+### 1. Global Audio Player
+The global audio player provides persistent audio playback across the application.
+
+```tsx
+<GlobalAudioPlayer
+  onLibraryOpen={() => setIsLibraryOpen(true)}
+/>
 ```
 
-## Implementation Steps
+Features:
+- Persistent playback across pages
+- Track progress visualization
+- Volume control
+- Playlist management
+- Expandable interface
+- Voice context integration
 
-### 1. Theme System (1-2 days)
+### 2. Audio Library
+The audio library manages music tracks and playlists.
 
-1. Create theme types in `design-system/theme/types.ts`:
+```tsx
+<AudioLibrary
+  isOpen={isLibraryOpen}
+  onClose={() => setIsLibraryOpen(false)}
+  onTrackSelect={handleTrackSelect}
+  currentTrack={currentTrack}
+/>
+```
+
+Features:
+- YouTube Music integration
+- Playlist management
+- Track search
+- Sorting options
+- Filter by source
+- Favorites system
+
+### 3. Browser Grid
+The browser grid enables multi-session browsing with media support.
+
+```tsx
+<BrowserGrid
+  sessions={sessions}
+  onSessionClick={handleSessionClick}
+  onSessionClose={handleSessionClose}
+  onMediaControl={handleMediaControl}
+  layout="2x2" // or "3x3"
+/>
+```
+
+Features:
+- Grid layout options (2x2 or 3x3)
+- Session management
+- Media playback
+- Screenshot capture
+- Voice integration
+- Expandable sessions
+
+### 4. Voice Components
+
+#### Voice Gallery
+```tsx
+<VoiceGallery
+  onVoiceSelect={handleVoiceSelect}
+  onClose={() => setShowGallery(false)}
+  standalone={false}
+/>
+```
+
+Features:
+- Voice preview
+- Voice management
+- Category filtering
+- Search functionality
+- Grid layout
+
+#### Voice Cloner
+```tsx
+<VoiceCloner
+  initialVoice={voice}
+  onVoiceCreated={handleVoiceCreated}
+  onClose={() => setShowCloner(false)}
+/>
+```
+
+Features:
+- Voice recording
+- Sample management
+- Model selection
+- Voice editing
+- Progress tracking
+
+#### Voice Designer
+```tsx
+<VoiceDesigner
+  onVoiceCreated={handleVoiceCreated}
+  onClose={() => setShowDesigner(false)}
+/>
+```
+
+Features:
+- Voice customization
+- Parameter control
+- Real-time preview
+- Preset management
+- Voice testing
+
+## Layout Structure
+
+### 1. App Layout
+```tsx
+<AppLayout>
+  {/* Sidebar Navigation */}
+  {/* Main Content */}
+  <GlobalAudioPlayer />
+  <AudioLibrary />
+</AppLayout>
+```
+
+### 2. Browser Layout
+```tsx
+<div className="flex h-screen">
+  {/* Chat Section */}
+  {/* Browser Grid Section */}
+</div>
+```
+
+## Theme Integration
+
+### 1. Audio Components
+```css
+.audio-player {
+  @apply bg-background border border-muted rounded-lg shadow-lg;
+}
+
+.audio-controls {
+  @apply bg-background/80 backdrop-blur-sm;
+}
+
+.progress-bar {
+  @apply bg-primary/10 rounded-full overflow-hidden;
+}
+```
+
+### 2. Browser Components
+```css
+.browser-session {
+  @apply bg-background border border-muted rounded-lg overflow-hidden;
+}
+
+.title-bar {
+  @apply bg-background/80 backdrop-blur-sm;
+}
+
+.media-controls {
+  @apply bg-black/50 text-white;
+}
+```
+
+## State Management
+
+### 1. Audio State
 ```typescript
-export interface ThemeColors {
-  background: string;
-  foreground: string;
-  primary: string;
-  secondary: string;
-  accent: string;
-  muted: string;
-  mutedForeground: string;
-  inputBackground: string;
-  buttonText: string;
-  iconColor: string;
-  iconHover: string;
-}
-
-export interface ThemeSpacing {
-  xs: string;
-  sm: string;
-  md: string;
-  lg: string;
-  xl: string;
-}
-
-export interface ThemeTypography {
-  fontFamily: {
-    sans: string;
-    mono: string;
-  };
-  fontSize: {
-    xs: string;
-    sm: string;
-    base: string;
-    lg: string;
-    xl: string;
-    '2xl': string;
-  };
-  fontWeight: {
-    normal: number;
-    medium: number;
-    semibold: number;
-    bold: number;
-  };
-  lineHeight: {
-    tight: number;
-    normal: number;
-    relaxed: number;
-  };
-}
-
-export interface Theme {
-  colors: ThemeColors;
-  spacing: ThemeSpacing;
-  typography: ThemeTypography;
-  // ... other theme properties
+interface AudioState {
+  currentTrack: Track | null;
+  queue: Track[];
+  isPlaying: boolean;
+  volume: number;
+  progress: number;
 }
 ```
 
-2. Implement theme variants in `design-system/theme/variants.ts`
-3. Create theme utilities in `design-system/theme/utils.ts`
-4. Set up theme context and provider
-
-### 2. Base Components (2-3 days)
-
-1. Button Component (`components/base/Button/`):
+### 2. Browser State
 ```typescript
-interface ButtonProps {
-  variant: 'primary' | 'secondary' | 'ghost' | 'link';
-  size: 'sm' | 'md' | 'lg';
-  loading?: boolean;
-  icon?: ReactNode;
-  fullWidth?: boolean;
-  children: ReactNode;
-  onClick?: () => void;
+interface BrowserState {
+  sessions: BrowserSession[];
+  activeSession: string | null;
+  layout: '2x2' | '3x3';
 }
 ```
 
-2. Input Component (`components/base/Input/`):
+### 3. Voice State
 ```typescript
-interface InputProps {
-  variant: 'default' | 'filled' | 'outlined';
-  size: 'sm' | 'md' | 'lg';
-  error?: string;
-  helper?: string;
-  icon?: ReactNode;
-  clearable?: boolean;
-  value: string;
-  onChange: (value: string) => void;
+interface VoiceState {
+  voices: Voice[];
+  activeVoice: Voice | null;
+  isRecording: boolean;
+  samples: Blob[];
 }
 ```
 
-3. Card Component (`components/base/Card/`)
-4. Typography Components (`components/base/Typography/`)
+## Responsive Design
 
-### 3. Layout Components (1-2 days)
+### 1. Audio Player
+- Collapses to minimal player on mobile
+- Expands to full interface on desktop
+- Adapts controls for touch devices
 
-1. Grid System:
-```typescript
-interface GridProps {
-  columns: number | { sm: number; md: number; lg: number };
-  gap: keyof Theme['spacing'];
-  alignItems?: 'start' | 'center' | 'end';
-  justifyItems?: 'start' | 'center' | 'end';
-  children: ReactNode;
-}
-```
+### 2. Browser Grid
+- Switches to single column on mobile
+- Maintains aspect ratio for sessions
+- Responsive media controls
 
-2. Container System
-3. Stack Component
+### 3. Voice Interface
+- Adapts recording interface for mobile
+- Simplifies controls on smaller screens
+- Maintains functionality across devices
 
-### 4. Animation System (2-3 days)
+## Accessibility
 
-1. Create animation utilities:
-```typescript
-export const transitions = {
-  fast: '100ms ease-out',
-  normal: '200ms ease-out',
-  slow: '300ms ease-out',
-};
+### 1. Audio Controls
+- Keyboard navigation
+- Screen reader support
+- ARIA labels
+- Focus management
 
-export const animations = {
-  fadeIn: {
-    initial: { opacity: 0 },
-    animate: { opacity: 1 },
-    exit: { opacity: 0 },
-  },
-  slideIn: {
-    initial: { x: -20, opacity: 0 },
-    animate: { x: 0, opacity: 1 },
-    exit: { x: 20, opacity: 0 },
-  },
-};
-```
+### 2. Browser Interface
+- Tab navigation
+- Role attributes
+- Focus trapping
+- Keyboard shortcuts
 
-2. Implement animation hooks
-3. Add micro-interactions
-4. Set up page transitions
+### 3. Voice Interface
+- Clear feedback
+- Error messages
+- Loading states
+- Progress indicators
 
-### 5. Feedback Components (1-2 days)
+## Error Handling
 
-1. Toast System:
-```typescript
-interface ToastProps {
-  type: 'success' | 'error' | 'info' | 'warning';
-  message: string;
-  duration?: number;
-  position?: 'top' | 'bottom' | 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left';
-}
-```
+### 1. Audio Errors
+- Playback failures
+- Network issues
+- Format incompatibility
+- Resource cleanup
 
-2. Loading States:
-```typescript
-interface SpinnerProps {
-  size?: 'sm' | 'md' | 'lg';
-  color?: keyof Theme['colors'];
-  thickness?: number;
-}
-```
+### 2. Browser Errors
+- Loading failures
+- Session crashes
+- Media errors
+- Screenshot failures
 
-3. Progress Indicators
-
-## Component Migration Strategy
-
-1. Create new components in design-system
-2. Update existing components to use new system
-3. Test for visual consistency
-4. Update documentation
-
-## Testing Requirements
-
-1. Visual Regression Tests:
-   - Storybook stories for all components
-   - Percy or Chromatic for visual testing
-   - Theme switching tests
-
-2. Unit Tests:
-   - Component rendering
-   - Props validation
-   - Event handling
-   - Accessibility
-
-3. Integration Tests:
-   - Theme system
-   - Animation system
-   - Component composition
-
-## Accessibility Checklist
-
-1. Keyboard Navigation:
-   - Focus management
-   - Tab order
-   - Keyboard shortcuts
-
-2. Screen Readers:
-   - ARIA labels
-   - Role attributes
-   - Live regions
-
-3. Visual:
-   - Color contrast
-   - Focus indicators
-   - Text sizing
+### 3. Voice Errors
+- Recording failures
+- Processing errors
+- API limitations
+- Storage issues
 
 ## Performance Considerations
 
-1. Code Splitting:
-   - Lazy load components
-   - Dynamic imports for animations
-   - Separate theme bundles
+### 1. Audio System
+- Lazy loading
+- Stream management
+- Memory cleanup
+- Cache strategy
 
-2. Bundle Size:
-   - Tree-shaking
-   - Component code splitting
-   - Minimal dependencies
+### 2. Browser System
+- Session limits
+- Resource management
+- Memory monitoring
+- Screenshot optimization
 
-3. Runtime Performance:
-   - Memoization
-   - Event delegation
-   - Animation optimization
+### 3. Voice System
+- Sample compression
+- Processing queues
+- Cache management
+- Resource cleanup
 
-## Next Steps
+## Testing Strategy
 
-1. Switch to Code mode
-2. Create design-system directory structure
-3. Implement theme system
-4. Create base components
-5. Add animation utilities
-6. Migrate existing components
+### 1. Component Tests
+- Rendering tests
+- Interaction tests
+- State management
+- Error handling
 
-This implementation should be done incrementally, with each component being built, tested, and documented before moving on to the next. Regular visual reviews and accessibility audits should be conducted throughout the process.
+### 2. Integration Tests
+- Cross-component interaction
+- State synchronization
+- Event handling
+- Error propagation
+
+### 3. E2E Tests
+- User flows
+- Performance metrics
+- Error scenarios
+- Cross-browser compatibility

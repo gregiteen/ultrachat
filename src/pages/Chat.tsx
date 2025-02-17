@@ -7,22 +7,21 @@ import { usePersonalizationStore } from '../store/personalization';
 import type { Context } from '../types';
 import { ChatInput } from '../components/ChatInput';
 import { ChatHistory } from '../components/ChatHistory';
+import { MessageHistory } from '../components/MessageHistory';
 import { Settings } from '../components/Settings';
-import { ContextSelector } from '../components/ContextSelector';
 import ContextEditor from '../components/ContextEditor';
 import { PersonalizationButton } from '../components/PersonalizationButton';
 import { PersonalizationWelcome } from '../components/PersonalizationWelcome';
-import { MessageSquare, AlertCircle, ChevronRight, ChevronLeft } from 'lucide-react';
+import { MessageSquare, AlertCircle, ChevronRight, ChevronLeft, UserCircle } from 'lucide-react';
 import { useSettingsStore } from '../store/settings';
-import VirtualizedChatHistory from '../components/VirtualizedChatHistory';
 
 export default function Chat() {
   const navigate = useNavigate();
   const { loading: messageLoading, error: messageError, sendMessage, clearThreadMessages } = useMessageStore();
-  const { fetchThreads } = useThreadStore();
-  const { contexts, activeContext, setActiveContext } = useContextStore();
-  const { loading: authLoading } = useAuthStore();
-  const { isActive, hasSeenWelcome, snoozedForSession, togglePersonalization, personalInfo, setHasSeenWelcome, initialized } = usePersonalizationStore();
+  const { fetchThreads, currentThreadId } = useThreadStore();
+  const { contexts, activeContext, setActiveContext, initialized: contextInitialized, fetchContexts } = useContextStore();
+  const { loading: authLoading, initialized: authInitialized, user } = useAuthStore();
+  const { isActive, hasSeenWelcome, snoozedForSession, togglePersonalization, personalInfo, setHasSeenWelcome, initialized, init: initPersonalization } = usePersonalizationStore();
   const [showSettings, setShowSettings] = useState(false);
   const [sendError, setSendError] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -31,34 +30,58 @@ export default function Chat() {
 
   const [isVoiceToVoiceMode, setIsVoiceToVoiceMode] = useState(false);
   const [isVoiceToTextMode, setIsVoiceToTextMode] = useState(false);
+  const [isSearchMode, setIsSearchMode] = useState(false);
 
   const [isInitializing, setIsInitializing] = useState(true);
 
   const { settings } = useSettingsStore();
 
+  // Initialize data when auth is ready
   useEffect(() => {
-    fetchThreads().catch(console.error);
-  }, [fetchThreads]);
+    if (authInitialized && user) {
+      const initialize = async () => {
+        try {
+          await Promise.all([
+            fetchThreads(),
+            initPersonalization(),
+            fetchContexts()
+          ]);
+          // Set initialized states
+          useThreadStore.setState({ initialized: true });
+          useContextStore.setState({ initialized: true });
+          usePersonalizationStore.setState({ initialized: true });
+        } catch (error) {
+          console.error('Error initializing:', error);
+          // Still set initialized to prevent infinite loading
+          setIsInitializing(false);
+        }
+      };
+      initialize();
+    }
+  }, [authInitialized, user, fetchThreads, initPersonalization, fetchContexts]);
 
+  // Track initialization state
   useEffect(() => {
-    console.log('Auth loading:', authLoading, 'Initialized:', initialized);
-    if (!authLoading) {
+    console.log('Auth initialized:', authInitialized, 'Context initialized:', contextInitialized, 'Personalization initialized:', initialized);
+    if (authInitialized && contextInitialized && initialized) {
       setIsInitializing(false);
     }
-  }, [authLoading]);
+  }, [authInitialized, contextInitialized, initialized]);
 
   const handleNewChat = () => {
-    const currentThreadId = useThreadStore.getState().currentThreadId;
-    if (currentThreadId) {
-      clearThreadMessages(currentThreadId);
-    }
-    setSendError(null);
+    useThreadStore.getState().switchThread('');
   };
 
-  const handleSendMessage = async (content: string, files?: string[], contextId?: string, isSystemMessage: boolean = false) => {
+  const handleContinueInPersonalization = () => {
+    if (currentThreadId) {
+      navigate(`/account?tab=personalization&thread=${currentThreadId}`);
+    }
+  };
+
+  const handleSendMessage = async (content: string, files?: string[], contextId?: string, isSystemMessage: boolean = false, skipAiResponse: boolean = false, forceSearch: boolean = false) => {
     setSendError(null);
     try {
-      await sendMessage(content, files, isSystemMessage ? undefined : activeContext?.id, isSystemMessage);
+      await sendMessage(content, files, isSystemMessage ? undefined : activeContext?.id, isSystemMessage, skipAiResponse, forceSearch || isSearchMode);
     } catch (error) {
       const errorMessage = error instanceof Error
         ? error.message
@@ -79,10 +102,6 @@ export default function Chat() {
     if (currentThreadId) {
       clearThreadMessages(currentThreadId);
     }
-  };
-
-  const handlePersonalization = () => {
-    navigate('/account?tab=personalization');
   };
 
   const handleWelcomeClose = async () => {
@@ -137,17 +156,29 @@ export default function Chat() {
         <div className="p-4 border-b border-muted">
           <button
             onClick={handleNewChat}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-button-text bg-primary rounded-lg hover:bg-secondary transition-colors"
+            className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-button-text bg-primary rounded-lg hover:bg-secondary transition-colors mb-2"
           >
             <MessageSquare className="h-4 w-4" />
             New Chat
           </button>
+          {currentThreadId && (
+            <button
+              onClick={handleContinueInPersonalization}
+              className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-muted-foreground bg-muted rounded-lg hover:bg-muted/80 transition-colors"
+              title="Continue this chat in the personalization interface"
+            >
+              <UserCircle className="h-4 w-4" />
+              <span className="truncate">
+                Continue in Personalization
+              </span>
+            </button>
+          )}
         </div>
         <ChatHistory />
       </div>
 
       {/* Main content */}
-      <div className="flex-1 flex flex-col overflow-hidden">
+      <div className={`flex-1 flex flex-col overflow-hidden ml-0 lg:ml-64 transition-all duration-200 ease-in-out ${drawerOpen ? 'ml-64' : ''}`}>
         {/* Drawer toggle button */}
         <button
           onClick={() => setDrawerOpen(!drawerOpen)}
@@ -171,34 +202,28 @@ export default function Chat() {
 
         {/* Messages */}
         <div className="flex-1 overflow-hidden">
-          <VirtualizedChatHistory />
+          <MessageHistory />
         </div>
 
         {/* Context Selector and Input */}
         <div className="p-6 space-y-4">
-          <ContextSelector
-            contexts={contexts}
-            activeContext={activeContext}
-            onContextChange={handleContextChange}
-            onEditContext={handleEditContext}
-          />
-
           <div className="relative">
             <div className="absolute left-2 top-1/2 -translate-y-1/2 z-10">
               <PersonalizationButton
                 isActive={isActive}
                 onToggle={togglePersonalization}
-                onClick={handlePersonalization}
               />
             </div>
             <div className="pl-12">
               <ChatInput
                 onSendMessage={handleSendMessage}
                 isLoading={messageLoading}
-                isVoiceToTextMode={isActive && isVoiceToTextMode}
+                isVoiceToTextMode={isVoiceToTextMode}
                 setIsVoiceToTextMode={(enabled) => isActive && setIsVoiceToTextMode(enabled)}
-                isVoiceToVoiceMode={isActive && isVoiceToVoiceMode}
+                isVoiceToVoiceMode={isVoiceToVoiceMode}
                 setIsVoiceToVoiceMode={(enabled) => isActive && setIsVoiceToVoiceMode(enabled)}
+                isSearchMode={isSearchMode}
+                setIsSearchMode={setIsSearchMode}
               />
             </div>
           </div>
@@ -220,12 +245,10 @@ export default function Chat() {
       {showSettings && <Settings onClose={() => setShowSettings(false)} />}
 
       {/* Welcome Dialog */}
-      {initialized && !hasSeenWelcome && !snoozedForSession && !hasPersonalInfo() && !isInitializing && (
+      {!isInitializing && initialized && !hasSeenWelcome && !snoozedForSession && !hasPersonalInfo() && (
         <PersonalizationWelcome 
           onClose={handleWelcomeClose} 
-          onSetup={() => {
-            handleSetupPersonalization();
-          }}
+          onSetup={handleSetupPersonalization}
         />
       )}
 

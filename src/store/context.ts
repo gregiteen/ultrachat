@@ -1,3 +1,11 @@
+/**
+ * Context Store
+ * 
+ * Note: While this is technically the "context" system in the code,
+ * we present it to users as the "assistant" system in the UI.
+ * The term "context" is used internally for technical/historical reasons,
+ * but all user-facing labels should use "assistant" terminology.
+ */
 import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
 import type { Context } from '../types';
@@ -7,7 +15,9 @@ interface ContextState {
   contexts: Context[];
   activeContext: Context | null;
   loading: boolean;
+  initialized: boolean;
   error: string | null;
+  setInitialized: (value: boolean) => void;
   fetchContexts: () => Promise<void>;
   createContext: (name: string, content: string) => Promise<void>;
   updateContext: (id: string, updates: Partial<Context>) => Promise<void>;
@@ -19,6 +29,7 @@ export const useContextStore = create<ContextState>((set, get) => ({
   contexts: [],
   activeContext: null,
   loading: false,
+  initialized: false,
   error: null,
 
   fetchContexts: async () => {
@@ -42,9 +53,11 @@ export const useContextStore = create<ContextState>((set, get) => ({
       if (!get().activeContext && contexts.length > 0) {
         set({ activeContext: contexts[0] });
       }
+      set({ initialized: true });
     } catch (error) {
       console.error('Error fetching contexts:', error);
       set({ error: error instanceof Error ? error.message : 'Failed to fetch contexts' });
+      throw error; // Let Chat.tsx handle initialization error
     } finally {
       set({ loading: false });
     }
@@ -131,6 +144,24 @@ export const useContextStore = create<ContextState>((set, get) => ({
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
 
+      // First, update any threads and messages that reference this context
+      const updateThreads = await createQuery(supabase, 'threads')
+        .update({ context_id: null })
+        .eq('context_id', id)
+        .eq('user_id', user.id)
+        .execute();
+      
+      if (updateThreads.error) throw updateThreads.error;
+      
+      const updateMessages = await createQuery(supabase, 'messages')
+        .update({ context_id: null })
+        .eq('context_id', id)
+        .eq('user_id', user.id)
+        .execute();
+      
+      if (updateMessages.error) throw updateMessages.error;
+
+      // Delete the context
       const result = await createQuery<Context>(supabase, 'contexts')
         .delete()
         .eq('id', id)
@@ -141,8 +172,8 @@ export const useContextStore = create<ContextState>((set, get) => ({
 
       const contexts = get().contexts.filter(context => context.id !== id);
       set({ contexts });
-
-      // Clear active context if it was the one deleted
+      
+      // Update active context if needed
       if (get().activeContext?.id === id) {
         set({ activeContext: contexts[0] || null });
       }
@@ -157,5 +188,9 @@ export const useContextStore = create<ContextState>((set, get) => ({
 
   setActiveContext: (context: Context | null) => {
     set({ activeContext: context });
+  },
+
+  setInitialized: (value: boolean) => {
+    set({ initialized: value });
   }
 }));

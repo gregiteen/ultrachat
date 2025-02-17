@@ -1,9 +1,9 @@
 import React, { createContext, useContext, useEffect, useState } from 'react';
 import type { Theme } from './types';
 import { themes } from './variants';
-import { applyTheme, getCurrentTheme, getSystemTheme, setCustomThemes } from './utils';
+import { applyTheme, getCurrentTheme, getSystemTheme } from './utils';
 import { useAuthStore } from '../../store/auth';
-import { getCustomThemes, saveCustomTheme, updateCustomTheme, deleteCustomTheme } from '../../lib/theme-storage';
+import { getCustomThemes, createCustomTheme, updateCustomTheme, deleteCustomTheme } from '../../lib/theme-storage';
 
 interface ThemeContextValue {
   theme: Theme;
@@ -12,6 +12,7 @@ interface ThemeContextValue {
   designerThemes: Theme[];
   customThemes: Theme[];
   saveCustomTheme: (theme: Theme) => Promise<void>;
+  loading: boolean;
   updateCustomTheme: (theme: Theme) => Promise<void>;
   deleteCustomTheme: (themeId: string) => Promise<void>;
   isCustomTheme: (themeId: string) => boolean;
@@ -36,36 +37,38 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   };
 
   const handleSaveCustomTheme = async (newTheme: Theme) => {
-    const { data, error } = await saveCustomTheme(newTheme);
-    if (error) {
+    try {
+      const savedTheme = await createCustomTheme(newTheme);
+      if (savedTheme) {
+        setCustomThemes(prev => [...prev, savedTheme]);
+      }
+    } catch (error) {
       console.error('Error saving custom theme:', error);
-      return;
-    }
-    if (data) {
-      setCustomThemes(prev => [...prev, data]);
     }
   };
 
   const handleUpdateCustomTheme = async (updatedTheme: Theme) => {
-    const { data, error } = await updateCustomTheme(updatedTheme);
-    if (error) {
+    try {
+      const result = await updateCustomTheme(updatedTheme);
+      if (result) {
+        setCustomThemes(prev => 
+          prev.map(theme => theme.id === result.id ? result : theme)
+        );
+      }
+    } catch (error) {
       console.error('Error updating custom theme:', error);
-      return;
-    }
-    if (data) {
-      setCustomThemes(prev => 
-        prev.map(theme => theme.id === data.id ? data : theme)
-      );
     }
   };
 
   const handleDeleteCustomTheme = async (themeId: string) => {
-    const { error } = await deleteCustomTheme(themeId);
-    if (error) {
+    try {
+      const success = await deleteCustomTheme(themeId);
+      if (success) {
+        setCustomThemes(prev => prev.filter(theme => theme.id !== themeId));
+      }
+    } catch (error) {
       console.error('Error deleting custom theme:', error);
-      return;
     }
-    setCustomThemes(prev => prev.filter(theme => theme.id !== themeId));
   };
 
   const isCustomTheme = (themeId: string) => {
@@ -74,31 +77,31 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   // Initialize theme and load custom themes when auth is ready
   useEffect(() => {
-    if (isInitialized && !isLoading) {
-      applyTheme(theme);
-      
-      if (user) {
-        const loadCustomThemes = async () => {
-          setLoading(true);
-          const { data, error } = await getCustomThemes();
-          if (error) console.error('Error loading custom themes:', error);
-          if (data) {
-            setCustomThemes(data);
-            setCustomThemes(data); // Update the utils with custom themes
-          }
-          setLoading(false);
-        };
-        loadCustomThemes();
-      } else {
-        setLoading(false);
-      }
-    }
-  }, [isInitialized, isLoading, user]);
+    // Always apply the current theme, even if not initialized
+    applyTheme(theme);
 
-  // Update custom themes in utils when they change
-  useEffect(() => {
-    setCustomThemes(customThemes);
-  }, [customThemes]);
+    // Only load custom themes when auth is ready and user is logged in
+    if (!isInitialized || isLoading) {
+      return;
+    }
+
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+
+    const loadCustomThemes = async () => {
+      setLoading(true);
+      try {
+        const themes = await getCustomThemes();
+        setCustomThemes(themes);
+      } catch (error) {
+        console.error('Error loading custom themes:', error);
+      }
+      setLoading(false);
+    }
+    loadCustomThemes();
+  }, [isInitialized, isLoading, user]);
 
   // Listen for theme change events
   useEffect(() => {
@@ -121,6 +124,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         designerThemes: themes,
         customThemes,
         saveCustomTheme: handleSaveCustomTheme,
+        loading,
         updateCustomTheme: handleUpdateCustomTheme,
         deleteCustomTheme: handleDeleteCustomTheme,
         isCustomTheme,

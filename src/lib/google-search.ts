@@ -41,7 +41,7 @@ class GoogleSearchService {
       }
 
       const baseUrl = import.meta.env.DEV ? '/api/google' : 'https://www.googleapis.com/customsearch/v1';
-      console.log('Using Google search endpoint:', baseUrl);
+      console.log('Google Search:', { baseUrl, query, count });
 
       const response = await fetch(
         `${baseUrl}?key=${this.apiKey}&cx=${this.searchEngineId}&q=${encodeURIComponent(query)}&num=${count}`,
@@ -63,6 +63,7 @@ class GoogleSearchService {
       }
 
       const data: GoogleSearchResponse = await response.json();
+      console.log('Google Search results:', data.items?.length || 0, 'items found');
       return data.items || [];
     } catch (error) {
       console.error('Google search error:', error);

@@ -1,3 +1,14 @@
+// Previous theme interfaces remain the same until Theme interface
+
+export interface ThemeIdentification {
+  id: string;
+  name: string;
+  description?: string;
+  category?: string;
+  preview?: string;
+  isCustom?: boolean;
+}
+
 export interface ThemeColors {
   background: string;
   foreground: string;
@@ -40,22 +51,9 @@ export interface ThemeTypography {
     bold: number;
   };
   lineHeight: {
-    tight: number;
-    normal: number;
-    relaxed: number;
-  };
-}
-
-export interface ThemeAnimation {
-  duration: {
-    fast: string;
+    tight: string;
     normal: string;
-    slow: string;
-  };
-  easing: {
-    easeIn: string;
-    easeOut: string;
-    easeInOut: string;
+    relaxed: string;
   };
 }
 
@@ -72,14 +70,30 @@ export interface ThemeBorderRadius {
   full: string;
 }
 
-export interface Theme {
-  id: string;
-  name: string;
-  isCustom?: boolean;
+export interface ThemeAnimation {
+  duration: {
+    fast: string;
+    normal: string;
+    slow: string;
+  };
+  easing: {
+    easeIn: string;
+    easeOut: string;
+    easeInOut: string;
+    linear: string;
+  };
+}
+
+export interface Theme extends ThemeIdentification {
   colors: ThemeColors;
   spacing: ThemeSpacing;
   typography: ThemeTypography;
-  animation: ThemeAnimation;
   elevation: ThemeElevation;
   borderRadius: ThemeBorderRadius;
+  animation: ThemeAnimation;
+}
+
+export interface ThemeContextValue {
+  theme: Theme;
+  setTheme: (theme: Theme) => void;
 }

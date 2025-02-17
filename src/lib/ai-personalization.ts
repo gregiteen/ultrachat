@@ -1,229 +1,225 @@
-import { PersonalizationChatState, AIResponse, PersonalizationDocument } from '../types/personalization';
-import type { PersonalInfo } from '../types';
-import { gemini } from './gemini';
+import { use_mcp_tool } from './mcp';
+import type { PersonalizationDocument, PersonalInfo } from '../types/personalization';
 
-export class AIPersonalizationService {
-  private static instance: AIPersonalizationService;
+interface UserPreferences {
+  communication: 'formal' | 'casual' | 'direct' | 'detailed' | 'collaborative';
+  learning: 'visual' | 'hands-on' | 'theoretical' | 'mixed';
+  workStyle: 'independent' | 'collaborative' | 'structured' | 'flexible';
+  storage: 'local' | 'google_drive' | 'none';
+}
+
+interface CommunicationStyle {
+  tone: 'professional' | 'friendly' | 'technical' | 'conversational';
+  formality: 'formal' | 'semi-formal' | 'casual';
+  detail_level: 'high' | 'medium' | 'low';
+}
+
+interface ChatResponse {
+  message: string;
+  extractedInfo?: Partial<PersonalInfo>;
+  currentStep?: number;
+  error?: string | null;
+}
+
+/**
+ * AI-driven personalization service
+ */
+export class AIPersonalization {
+  private static instance: AIPersonalization;
+  
   private constructor() {}
 
-  public static getInstance(): AIPersonalizationService {
-    if (!AIPersonalizationService.instance) {
-      AIPersonalizationService.instance = new AIPersonalizationService();
+  public static getInstance(): AIPersonalization {
+    if (!AIPersonalization.instance) {
+      AIPersonalization.instance = new AIPersonalization();
     }
-    return AIPersonalizationService.instance;
+    return AIPersonalization.instance;
   }
 
+  /**
+   * Generate a chat response based on user input
+   */
   public async generateChatResponse(
-    input: string,
-    files: string[] | null,
-    currentState: PersonalizationChatState
-  ): Promise<AIResponse> {
-    // Handle special commands
-    if (input === 'START_CHAT') {
-      return {
-        message: "Hello! I'm here to help personalize your experience. I'll ask you some questions to understand your preferences better. This information helps me provide a more tailored experience. Let's start with your name - what should I call you?",
-        type: "greeting",
-        intent: {
-          category: "basic_info",
-          action: "gather",
-          confidence: 1.0,
-          field: "name"
-        },
-        suggestions: [
-          "My name is...",
-          "You can call me...",
-          "I go by..."
-        ],
-        extractedInfo: {}
-      };
+    content: string,
+    context: any,
+    state: {
+      currentStep: number;
+      messages: Array<{ role: string; content: string }>;
+      extractedInfo: PersonalInfo;
+      isProcessing: boolean;
+      error: string | null;
     }
-
-    if (input.startsWith('FILE_SELECTED:')) {
-      const filename = input.split(':')[1].split('/').pop();
-      return {
-        message: `I see you've shared ${filename}. This will help me understand your background better. Could you tell me what this file represents?`,
-        type: "question",
-        intent: {
-          category: "files",
-          action: "gather",
-          confidence: 0.9,
-          field: "file_context"
-        },
-        suggestions: [
-          "This is my resume...",
-          "This shows my background in...",
-          "This represents my work on..."
-        ],
-        extractedInfo: {}
-      };
-    }
-
-    const prompt = `You are a personalization assistant helping gather information for the user's profile. The profile includes these fields:
-
-- Basic Info: name, email, phone
-- Address: street, city, state, zip, country
-- Professional: job, company, resume, projects
-- Background: backstory, expertise
-- Personal: height, weight, shoe_size, clothing_sizes (top/bottom)
-- Preferences: favorite_foods, favorite_drinks
-- Relationships: family, friends, love_interests
-- Identity: cultural_groups, religion, worldview
-- Interests: hobbies, interests, pets
-- Goals: goals, dreams
-- Health: health_concerns
-- Other: keywords, freeform text
-
-Current conversation:
-${currentState.messages.map(m => `${m.role}: ${m.content}`).join('\n')}
-
-Current profile:
-${Object.keys(currentState.extractedInfo).length > 0 ? JSON.stringify(currentState.extractedInfo, null, 2) : 'No information collected yet'}
-
-Missing fields: ${(() => {
-  const requiredFields = [
-    'name',
-    'email',
-    'phone',
-    'address',
-    'job',
-    'company',
-    'backstory',
-    'projects',
-    'pets',
-    'health_concerns',
-    'height',
-    'weight',
-    'shoe_size',
-    'clothing_sizes',
-    'goals',
-    'dreams',
-    'resume',
-    'hobbies',
-    'family',
-    'favorite_foods',
-    'favorite_drinks',
-    'friends',
-    'love_interests',
-    'cultural_groups',
-    'religion',
-    'worldview',
-    'keywords',
-    'interests',
-    'expertise'
-  ] as const;
-  
-  return Object.keys(currentState.extractedInfo).length > 0 
-    ? requiredFields.filter(field => !(field in currentState.extractedInfo)).join(', ')
-    : 'All fields need to be collected';
-})()}
-    job: true, company: true, backstory: true, projects: true,
-    pets: true, health_concerns: true, height: true, weight: true,
-    shoe_size: true, clothing_sizes: true, goals: true, dreams: true,
-    resume: true, hobbies: true, family: true, favorite_foods: true,
-    favorite_drinks: true, friends: true, love_interests: true,
-    cultural_groups: true, religion: true, worldview: true,
-    keywords: true, interests: true, expertise: true
-  }).filter(([key]) => !currentState.extractedInfo[key]).map(([key]) => key).join(', ')
-  : 'All fields need to be collected'}
-
-Analyze their message "${input}" and respond with JSON:
-{
-  "message": "your response focusing on gathering profile information",
-  "type": one of ["response", "question", "suggestion", "confirmation"],
-  "intent": {
-    "category": one of ["basic_info", "address", "professional", "background", "personal", "preferences", "relationships", "identity", "interests", "goals", "health"],
-    "action": one of ["gather", "clarify", "suggest", "confirm"],
-    "confidence": number between 0 and 1,
-    "field": "specific field being gathered"
-  },
-  "suggestions": ["2-3 relevant follow-ups"],
-  "extractedInfo": {
-    // any new information for the profile fields
-  }
-}`;
-
-    try {
-      const result = await gemini.generateStructuredResponse(prompt);
-      console.log('Generated response:', result);
-      return result;
-    } catch (error) {
-      console.error('Error in personalization chat:', error);
-      return {
-        message: "I apologize for the interruption. Could you repeat that? I want to make sure I capture your information correctly.",
-        type: "error",
-        intent: {
-          category: "basic_info",
-          action: "gather",
-          confidence: 0.5,
-          field: "retry"
-        },
-        suggestions: [
-          "Let me try again",
-          "What I was saying was...",
-          "About my information..."
-        ],
-        extractedInfo: {}
-      };
-    }
+  ): Promise<ChatResponse> {
+    const response = await use_mcp_tool<ChatResponse>({
+      server_name: 'gemini',
+      tool_name: 'chat.generate',
+      arguments: {
+        content,
+        context,
+        state
+      }
+    });
+    return response;
   }
 
-  public async generatePersonalizationDocument(
-    info: PersonalInfo,
-    currentState: PersonalizationChatState
+  /**
+   * Initialize personalization for a new user
+   */
+  public async initializePersonalization(
+    initialMessages: Array<{ role: string; content: string }>,
+    existingPreferences?: Partial<UserPreferences>
   ): Promise<PersonalizationDocument> {
-    const prompt = `Create a personalization document based on this profile information:
-${JSON.stringify(info, null, 2)}
-
-Format as JSON:
-{
-  "preferences": {
-    "communication": string,
-    "learning": string,
-    "workStyle": string
-  },
-  "interests": string[],
-  "expertise": string[],
-  "communication_style": {
-    "tone": string,
-    "formality": string,
-    "detail_level": string
-  },
-  "personality_traits": string[],
-  "goals": string[],
-  "context_awareness": {
-    "background": string,
-    "current_focus": string,
-    "future_aspirations": string
+    // Analyze initial messages to understand user's style
+    const preferences = await this.analyzeUserPreferences(initialMessages, existingPreferences);
+    const communicationStyle = await this.analyzeCommunicationStyle(initialMessages);
+    
+    // Create initial personalization document
+    return {
+      preferences,
+      communication_style: communicationStyle,
+      interests: [],
+      goals: [],
+      expertise: [],
+      task_preferences: {
+        notification_channels: ['email'],
+        reminder_frequency: 'medium',
+        preferred_tools: [],
+        automation_level: 'medium',
+        collaboration_style: 'mixed'
+      }
+    };
   }
-}`;
 
-    try {
-      return await gemini.generateStructuredResponse(prompt);
-    } catch (error) {
-      console.error('Error generating personalization document:', error);
-      return {
-        preferences: {
-          communication: "standard",
-          learning: "adaptive",
-          workStyle: "flexible"
-        },
-        interests: info.interests || ["to be determined"],
-        expertise: info.expertise || ["to be determined"],
-        communication_style: {
-          tone: "neutral",
-          formality: "adaptive",
-          detail_level: "balanced"
-        },
-        personality_traits: ["adaptable"],
-        goals: info.goals || ["to be determined"],
-        context_awareness: {
-          background: info.backstory || "To be determined",
-          current_focus: "Building profile",
-          future_aspirations: info.dreams?.[0] || "To be determined"
-        }
-      };
-    }
+  /**
+   * Update personalization based on new interactions
+   */
+  public async updatePersonalization(
+    doc: PersonalizationDocument,
+    newMessages: Array<{ role: string; content: string }>,
+    updates?: Partial<PersonalizationDocument>
+  ): Promise<PersonalizationDocument> {
+    // Analyze new messages
+    const newPreferences = await this.analyzeUserPreferences(newMessages, doc.preferences);
+    const newCommunicationStyle = await this.analyzeCommunicationStyle(newMessages);
+    
+    // Extract interests and expertise
+    const { interests, expertise } = await this.extractTopics(newMessages);
+
+    // Merge with existing document
+    return {
+      ...doc,
+      ...updates,
+      preferences: {
+        ...doc.preferences,
+        ...newPreferences
+      },
+      communication_style: {
+        ...doc.communication_style,
+        ...newCommunicationStyle
+      },
+      interests: [...new Set([...doc.interests, ...interests])],
+      expertise: [...new Set([...doc.expertise, ...expertise])]
+    };
+  }
+
+  /**
+   * Analyze messages to determine user preferences
+   */
+  private async analyzeUserPreferences(
+    messages: Array<{ role: string; content: string }>,
+    existingPreferences?: Partial<UserPreferences>
+  ): Promise<UserPreferences> {
+    const defaultPreferences = {
+      communication: 'casual' as const,
+      learning: 'mixed' as const,
+      workStyle: 'flexible' as const,
+      storage: 'local' as const
+    };
+
+    // Analyze user's communication patterns
+    const { communicationStyle, learningStyle, workStyle } = await this.analyzeInteractionPatterns(messages);
+    
+    return {
+      communication: communicationStyle || existingPreferences?.communication || defaultPreferences.communication,
+      learning: learningStyle || existingPreferences?.learning || defaultPreferences.learning,
+      workStyle: workStyle || existingPreferences?.workStyle || defaultPreferences.workStyle,
+      storage: existingPreferences?.storage || defaultPreferences.storage
+    };
+  }
+
+  /**
+   * Analyze messages to determine communication style
+   */
+  private async analyzeCommunicationStyle(
+    messages: Array<{ role: string; content: string }>
+  ): Promise<CommunicationStyle> {
+    const userMessages = messages.filter(m => m.role === 'user');
+    const combinedContent = userMessages.map(m => m.content).join('\n');
+
+    const analysis = await use_mcp_tool<{
+      tone: CommunicationStyle['tone'];
+      formality: CommunicationStyle['formality'];
+      detail_level: CommunicationStyle['detail_level'];
+    }>({
+      server_name: 'gemini',
+      tool_name: 'analyze.style',
+      arguments: {
+        text: combinedContent,
+        aspects: ['tone', 'formality', 'detail_level']
+      }
+    });
+
+    return {
+      tone: analysis.tone,
+      formality: analysis.formality,
+      detail_level: analysis.detail_level
+    };
+  }
+
+  /**
+   * Analyze interaction patterns
+   */
+  private async analyzeInteractionPatterns(
+    messages: Array<{ role: string; content: string }>
+  ) {
+    const userMessages = messages.filter(m => m.role === 'user');
+    const combinedContent = userMessages.map(m => m.content).join('\n');
+
+    return use_mcp_tool<{
+      communicationStyle: UserPreferences['communication'];
+      learningStyle: UserPreferences['learning'];
+      workStyle: UserPreferences['workStyle'];
+    }>({
+      server_name: 'gemini',
+      tool_name: 'analyze.patterns',
+      arguments: {
+        text: combinedContent,
+        aspects: ['communication', 'learning', 'work']
+      }
+    });
+  }
+
+  /**
+   * Extract topics of interest and expertise
+   */
+  private async extractTopics(
+    messages: Array<{ role: string; content: string }>
+  ): Promise<{
+    interests: string[];
+    expertise: string[];
+  }> {
+    const userMessages = messages.filter(m => m.role === 'user');
+    const combinedContent = userMessages.map(m => m.content).join('\n');
+
+    return use_mcp_tool({
+      server_name: 'gemini',
+      tool_name: 'extract.topics',
+      arguments: {
+        text: combinedContent,
+        categories: ['interests', 'expertise']
+      }
+    });
   }
 }
 
-export const aiPersonalization = AIPersonalizationService.getInstance();
+export const aiPersonalization = AIPersonalization.getInstance();

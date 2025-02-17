@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Plus, Palette, Loader, Eye, Check, X } from 'lucide-react';
+import { Spinner } from '../design-system/components/feedback/Spinner';
 import type { Theme, ThemeColors } from '../design-system/theme/types';
 import { useTheme } from '../design-system/theme/context';
-import { baseTheme } from '../design-system/theme/variants';
+import { modernLight } from '../design-system/theme/variants';
 import { ColorPicker } from '../design-system/components/base/ColorPicker';
 import { useAuthStore } from '../store/auth';
 import { applyTheme } from '../lib/themes';
@@ -106,12 +107,21 @@ export function ThemeSelector() {
     setTheme, 
     designerThemes, 
     customThemes, 
+    loading: themeLoading,
     saveCustomTheme, 
     deleteCustomTheme 
   } = useTheme();
   
   const user = useAuthStore((state) => state.user);
-  const isInitialized = useAuthStore((state) => state.initialized);
+  const { initialized: isInitialized, loading: authLoading } = useAuthStore();
+
+  if (authLoading || themeLoading) {
+    return (
+      <div className="flex justify-center py-4">
+        <Spinner className="h-6 w-6 text-primary" />
+      </div>
+    );
+  }
           
   const [showCustomizer, setShowCustomizer] = useState(false);
   const [customTheme, setCustomTheme] = useState<ThemeFormState>({
@@ -148,11 +158,11 @@ export function ThemeSelector() {
     const newTheme: Theme = {
       ...customTheme,
       id: `custom-${Date.now()}`,
-      spacing: baseTheme.spacing,
-      typography: baseTheme.typography,
-      animation: baseTheme.animation,
-      elevation: baseTheme.elevation,
-      borderRadius: baseTheme.borderRadius,
+      spacing: modernLight.spacing,
+      typography: modernLight.typography,
+      animation: modernLight.animation,
+      elevation: modernLight.elevation,
+      borderRadius: modernLight.borderRadius,
       colors: customTheme.colors,
       name: customTheme.name,
       isCustom: true,
@@ -181,7 +191,7 @@ export function ThemeSelector() {
 
     // Create preview theme
     const preview: Theme = {
-      ...baseTheme,
+      ...modernLight,
       id: 'preview',
       name: customTheme.name || 'Preview',
       colors: updatedColors,
@@ -244,11 +254,7 @@ export function ThemeSelector() {
             </button>
           </div>
 
-          {!isInitialized ? (
-            <div className="flex items-center justify-center py-4">
-              <Loader className="h-5 w-5 animate-spin text-gray-400" />
-            </div>
-          ) : (
+          {isInitialized && (
             <div className="mt-4 grid grid-cols-2 gap-4">
               {customThemes.map((theme) => (
                 <ThemeButton

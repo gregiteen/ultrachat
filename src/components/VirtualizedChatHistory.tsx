@@ -1,5 +1,5 @@
-import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Virtuoso } from 'react-virtuoso';
+import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
+import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
 import { useMessageStore, useThreadStore } from '../store/chat';
 import { ChatMessage } from './ChatMessage';
 import type { Message } from '../types';
@@ -8,10 +8,10 @@ import { Spinner } from '../design-system/components/feedback/Spinner';
 
 const OVERSCAN_COUNT = 20;
 const INTERSECTION_THRESHOLD = 0.5;
-const PERFORMANCE_BUFFER_SIZE = 100;
+const SCROLL_DEBOUNCE_MS = 100;
 
 const VirtualizedChatHistory: React.FC = () => {
-  const virtuosoRef = useRef<any>(null);
+  const virtuosoRef = useRef<VirtuosoHandle>(null);
   const [error, setError] = useState<string | null>(null);
   
   const {
@@ -23,28 +23,6 @@ const VirtualizedChatHistory: React.FC = () => {
   } = useMessageStore();
   
   const { currentThreadId } = useThreadStore();
-
-  // Performance monitoring
-  const performanceMetrics = useRef<{
-    renderTimes: number[];
-    scrollTimes: number[];
-  }>({
-    renderTimes: [],
-    scrollTimes: []
-  });
-
-  const trackPerformance = useCallback((metric: 'render' | 'scroll', time: number) => {
-    const metrics = performanceMetrics.current[`${metric}Times`];
-    metrics.push(time);
-    
-    if (metrics.length > PERFORMANCE_BUFFER_SIZE) {
-      const avg = metrics.reduce((a, b) => a + b, 0) / metrics.length;
-      console.debug(`Average ${metric} time:`, avg.toFixed(2), 'ms');
-      metrics.length = 0; // Clear buffer
-    }
-  }, []);
-
-  const renderStartTime = useRef(Date.now());
 
   const loadMore = useCallback(async () => {
     try {
@@ -59,25 +37,41 @@ const VirtualizedChatHistory: React.FC = () => {
     }
   }, [loading, hasMoreMessages, currentThreadId, currentPage, fetchMessages]);
 
-  // Set up intersection observer for more efficient loading
+  // Memoize intersection observer options
+  const observerOptions = useMemo(() => ({
+    threshold: INTERSECTION_THRESHOLD,
+    root: null,
+    rootMargin: '100px',
+  }), []);
+
+  // Optimized intersection observer setup
   useEffect(() => {
+    if (!currentThreadId) return;
+
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting) {
+        const [entry] = entries;
+        if (entry?.isIntersecting) {
           loadMore();
         }
       },
-      { threshold: INTERSECTION_THRESHOLD }
+      observerOptions
     );
+
     const firstMessage = document.querySelector('[data-message-id]');
-    if (firstMessage) observer.observe(firstMessage);
-    return () => observer.disconnect();
-  }, [loadMore]);
+    if (firstMessage) {
+      observer.observe(firstMessage);
+    }
+
+    return () => {
+      observer.disconnect();
+    };
+  }, [loadMore, observerOptions, currentThreadId]);
 
   // Scroll to bottom on new messages
   useEffect(() => {
     if (virtuosoRef.current && messages.length > 0) {
-      (virtuosoRef.current as any).scrollToIndex({
+      virtuosoRef.current.scrollToIndex({
         index: messages.length - 1,
         behavior: 'smooth',
       });
@@ -89,17 +83,36 @@ const VirtualizedChatHistory: React.FC = () => {
     if (error) {
       const timer = setTimeout(() => {
         setError(null);
-      }, 5000); // Clear error after 5 seconds
+      }, 5000);
       return () => clearTimeout(timer);
     }
   }, [error]);
 
-  // Track render performance
+  // Memoize scroll handler with debouncing
+  const scrollHandler = useMemo(() => {
+    let scrollTimeout: NodeJS.Timeout;
+    return () => {
+      clearTimeout(scrollTimeout);
+      scrollTimeout = setTimeout(() => {
+        if (virtuosoRef.current) {
+          virtuosoRef.current.scrollToIndex({
+            index: messages.length - 1,
+            behavior: 'smooth',
+          });
+        }
+      }, SCROLL_DEBOUNCE_MS);
+    };
+  }, [messages.length]);
+
+  // Cleanup scroll handler
   useEffect(() => {
-    const renderTime = Date.now() - renderStartTime.current;
-    trackPerformance('render', renderTime);
-    renderStartTime.current = Date.now();
-  });
+    return () => {
+      const scroller = document.querySelector('[data-virtuoso-scroller]');
+      if (scroller) {
+        scroller.removeEventListener('scroll', scrollHandler);
+      }
+    };
+  }, [scrollHandler]);
 
   if (error) {
     return (
@@ -133,52 +146,42 @@ const VirtualizedChatHistory: React.FC = () => {
         role="log"
         aria-label="Chat message history"
         tabIndex={0}
-        scrollerRef={useCallback((el: HTMLElement | Window | null) => {
+        scrollerRef={(el: HTMLElement | Window | null) => {
           if (el) {
-            el.addEventListener('scroll', () => {
-              trackPerformance('scroll', performance.now());
-            }, { passive: true });
+            el.addEventListener('scroll', scrollHandler, { passive: true });
           }
-        }, [trackPerformance])}
-        itemContent={(index, message: Message) => (
+        }}
+        itemContent={(_, message: Message) => (
           <div 
+            key={message.id}
             data-message-id={message.id}
             className="p-2"
             role="article"
             aria-label={`Message from ${message.role}`}
           >
-            <ChatMessage
-              message={message}
-            />
+            <ChatMessage message={message} />
           </div>
         )}
         followOutput="smooth"
         alignToBottom
         initialTopMostItemIndex={messages.length - 1}
         components={{
-          Header: () =>
-            loading ? <LoadingSpinner size="small" /> : null,
+          Header: () => loading ? <LoadingSpinner size="small" /> : null,
         }}
       />
     </div>
   );
 };
 
-const LoadingSpinner = ({ size }: { size: 'small' | 'large' }) => {
-  return (
-    <div 
-      className="flex h-full items-center justify-center p-2"
-    >
-      <Spinner size={size === 'large' ? 'lg' : 'sm'} color="primary" />
-    </div>
-  );
-};
+const LoadingSpinner = ({ size }: { size: 'small' | 'large' }) => (
+  <div className="flex h-full items-center justify-center p-2">
+    <Spinner size={size === 'large' ? 'lg' : 'sm'} color="primary" />
+  </div>
+);
 
 export default withErrorBoundary(VirtualizedChatHistory, {
   onError: (error, errorInfo) => {
     console.error('Chat history error:', error);
     console.error('Component stack:', errorInfo.componentStack);
-    // You could send this to an error tracking service
-    // trackError(error, errorInfo);
   }
 });

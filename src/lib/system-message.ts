@@ -1,68 +1,33 @@
-import type { Context } from '../types';
+import type { Assistant } from '../types';
 
-export function generateSystemMessage(context: Partial<Context>): string {
+export function generateSystemMessage(assistant: Partial<Assistant>): string {
   let message = '';
 
-  // Add context name and description
-  if (context.name) {
-    message += `Context: ${context.name}\n\n`;
+  // Add assistant name and prompt
+  if (assistant.name) {
+    message += `Assistant: ${assistant.name}\n\n`;
   }
-  if (context.content) {
-    message += `${context.content}\n\n`;
+  if (assistant.prompt) {
+    message += `${assistant.prompt}\n\n`;
   }
 
   // Add AI personality settings
-  if (context.ai_personality) {
-    message += 'AI Personality Settings:\n';
-    message += `- Communication Tone: ${context.ai_personality.tone}\n`;
+  if (assistant.personality) {
+    message += 'Personality Settings:\n';
+    message += `- Communication Tone: ${assistant.personality.tone}\n`;
+    message += `- Interaction Style: ${assistant.personality.style}\n`;
     message += '- Personality Traits:\n';
-    context.ai_personality.traits.forEach(trait => {
+    assistant.personality.traits.forEach(trait => {
       message += `  * ${trait.label} (${trait.level}%): ${trait.description}\n`;
     });
     message += '\n';
   }
 
-  // Add personal information if available
-  if (context.personal_info) {
-    message += 'Personal Information:\n';
-    if (context.personal_info.name) {
-      message += `- Name: ${context.personal_info.name}\n`;
-    }
-    if (context.personal_info.email) {
-      message += `- Email: ${context.personal_info.email}\n`;
-    }
-    if (context.personal_info.personalityTraits) {
-      message += '- Personality Traits:\n';
-      if (context.personal_info.personalityTraits.mbti) {
-        message += `  * MBTI: ${context.personal_info.personalityTraits.mbti}\n`;
-      }
-      if (context.personal_info.personalityTraits.enneagram) {
-        message += `  * Enneagram: ${context.personal_info.personalityTraits.enneagram}\n`;
-      }
-      if (context.personal_info.personalityTraits.customTraits?.length) {
-        message += `  * Custom Traits: ${context.personal_info.personalityTraits.customTraits.join(', ')}\n`;
-      }
-    }
-    message += '\n';
-  }
-
-  // Add contacts if available
-  if (context.contacts?.length) {
-    message += 'Important Contacts:\n';
-    context.contacts.forEach(contact => {
-      message += `- ${contact.name}`;
-      if (contact.role) message += ` (${contact.role})`;
-      if (contact.notes) message += `\n  Notes: ${contact.notes}`;
-      message += '\n';
-    });
-    message += '\n';
-  }
-
-  // Add keywords/special instructions
-  if (context.keywords?.length) {
-    message += 'Special Instructions:\n';
-    context.keywords.forEach(keyword => {
-      message += `- When user says "${keyword.keyword}": ${keyword.description}\n`;
+  // Add integrations if available
+  if (assistant.integrations?.length) {
+    message += 'Available Integrations:\n';
+    assistant.integrations.forEach(integration => {
+      message += `- ${integration}\n`;
     });
     message += '\n';
   }

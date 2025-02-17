@@ -1,42 +1,77 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { usePersonalizationStore } from '../store/personalization';
-import { AIPersonalizationService } from '../lib/ai-personalization';
-import type { PersonalInfo } from '../types';
+import { useAuthStore } from '../store/auth';
+import { useMessageStore, useThreadStore } from '../store/chat';
+import { AIPersonalization } from '../lib/ai-personalization';
+import { PersonalizationThreadDialog } from './PersonalizationThreadDialog';
+import type { Task, PersonalInfo } from '../types';
+
 
 interface Props {
   isRecording: boolean;
+  onCreateTask?: () => void;
+  onEditTask?: (task: Task) => void;
 }
 
-export function PersonalizationChatbot({ isRecording }: Props) {
-  const { personalInfo, updatePersonalInfo } = usePersonalizationStore();
-  const [messages, setMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
+export function PersonalizationChatbot({ isRecording, onCreateTask, onEditTask }: Props) {
+  const { personalInfo, updatePersonalInfo, initialized: personalizationInitialized, loading: personalizationLoading } = usePersonalizationStore();
+  const { initialized: authInitialized, user } = useAuthStore();
+  const { messages, sendMessage } = useMessageStore();
+  const { currentThreadId, switchThread } = useThreadStore();
   const [input, setInput] = useState('');
+  const [showThreadDialog, setShowThreadDialog] = useState(true);
   const [isProcessing, setIsProcessing] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // Get thread ID from URL if present
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const threadId = params.get('thread');
+    if (threadId) {
+      handleThreadSelect(threadId);
+      setShowThreadDialog(false);
+    }
+  }, [location.search]);
 
   useEffect(() => {
     // Auto-scroll to bottom
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // Start chat when mounted
   useEffect(() => {
-    handleSendMessage('START_CHAT');
-  }, []);
+    if (authInitialized && user && personalizationInitialized && !personalizationLoading && !showThreadDialog && messages.length === 0) {
+      handleSendMessage('START_CHAT');
+    }
+  }, [authInitialized, user, personalizationInitialized, personalizationLoading, showThreadDialog, messages.length]);
+
+  const handleThreadSelect = async (threadId: string) => {
+    try {
+      if (threadId === 'new') {
+        await switchThread('');
+        setShowThreadDialog(false);
+      } else {
+        await switchThread(threadId);
+        setShowThreadDialog(false);
+      }
+    } catch (error) {
+      console.error('Error selecting thread:', error);
+    }
+  };
 
   const handleSendMessage = async (content: string) => {
-    if (!content.trim() && !isRecording) return;
+    if (!user || (!content.trim() && !isRecording) || showThreadDialog) return;
 
     setIsProcessing(true);
-    const newMessages = [...messages, { role: 'user' as const, content }];
-    setMessages(newMessages);
     setInput('');
 
     try {
-      const aiService = AIPersonalizationService.getInstance();
+      const aiService = AIPersonalization.getInstance();
       const response = await aiService.generateChatResponse(content, null, {
         currentStep: 0,
-        messages: newMessages,
+        messages: messages.map(m => ({ role: m.role === 'system' ? 'assistant' : m.role, content: m.content })),
         extractedInfo: personalInfo,
         isProcessing: false,
         error: null
@@ -44,22 +79,38 @@ export function PersonalizationChatbot({ isRecording }: Props) {
 
       // Update form fields with any extracted info
       if (response.extractedInfo && Object.keys(response.extractedInfo).length > 0) {
-        const updatedInfo = { ...personalInfo };
+        const updatedInfo: PersonalInfo = { ...personalInfo };
         
         // Update each field that was extracted
-        Object.entries(response.extractedInfo).forEach(([key, value]) => {
+        Object.entries(response.extractedInfo as Partial<PersonalInfo>).forEach(([key, value]) => {
           if (value !== undefined && value !== null) {
             // Handle nested objects like address
             if (key === 'address' && typeof value === 'object') {
-              updatedInfo.address = { ...updatedInfo.address, ...value };
+              updatedInfo.address = {
+                ...updatedInfo.address,
+                ...(value as PersonalInfo['address'])
+              };
             }
-            // Handle array fields
-            else if (Array.isArray(value)) {
-              (updatedInfo as any)[key] = value;
-            }
-            // Handle simple fields
             else {
-              updatedInfo[key as keyof PersonalInfo] = value;
+              switch (key) {
+                case 'interests':
+                case 'expertise':
+                case 'health_concerns':
+                case 'pets':
+                case 'goals':
+                case 'hobbies':
+                  updatedInfo[key] = value as string[];
+                  break;
+                case 'name':
+                case 'email':
+                case 'phone':
+                case 'job':
+                case 'company':
+                case 'religion':
+                case 'worldview':
+                  updatedInfo[key] = value as string;
+                  break;
+              }
             }
           }
         });
@@ -68,32 +119,82 @@ export function PersonalizationChatbot({ isRecording }: Props) {
         await updatePersonalInfo(updatedInfo);
       }
 
-      setMessages([...newMessages, { role: 'assistant' as const, content: response.message }]);
+      // Handle task-related commands
+      if (response.message.toLowerCase().includes('create a new task') && onCreateTask) {
+        onCreateTask();
+      } else if (response.message.toLowerCase().includes('edit task') && onEditTask) {
+        const taskMatch = response.message.match(/edit task "([^"]+)"/i);
+        if (taskMatch && response.extractedInfo?.task) {
+          onEditTask(response.extractedInfo.task as Task);
+        }
+      }
+
+      // Send user message
+      await sendMessage(content, [], undefined, true);
+      
+      // Send AI response
+      await sendMessage(response.message, [], undefined, true, true);
+
+      // Handle navigation based on AI response
+      if (response.message.toLowerCase().includes('let me take you to')) {
+        const match = response.message.match(/let me take you to the (\w+) page/i);
+        if (match) {
+          const page = match[1].toLowerCase();
+          navigate(`/${page}`);
+        }
+      }
+
     } catch (error) {
       console.error('Error in chat:', error);
-      setMessages([
-        ...newMessages,
-        { role: 'assistant' as const, content: 'I apologize, but I encountered an error. Could you try rephrasing that?' }
-      ]);
+      await sendMessage('I apologize, but I encountered an error. Could you try rephrasing that?', [], undefined, true, true);
     } finally {
       setIsProcessing(false);
     }
   };
 
+  if (!authInitialized || !user) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="text-lg text-muted-foreground">
+          Please log in to use the chat.
+        </div>
+      </div>
+    );
+  }
+
+  if (!personalizationInitialized || personalizationLoading) {
+    return (
+      <div className="flex items-center justify-center h-full">
+        <div className="animate-pulse text-lg text-muted-foreground">
+          Initializing chat...
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex flex-col h-full">
+      {showThreadDialog && (
+        <PersonalizationThreadDialog
+          onClose={() => setShowThreadDialog(false)}
+          onSelect={handleThreadSelect}
+        />
+      )}
+
+      {/* Chat Messages */}
       <div className="flex-1 overflow-y-auto p-4 space-y-4">
         {messages.map((message, index) => (
           <div
             key={index}
             className={`flex ${message.role === 'assistant' ? 'justify-start' : 'justify-end'}`}
+            data-role={message.role}
           >
             <div
               className={`max-w-[80%] rounded-lg px-4 py-2 ${
                 message.role === 'assistant'
                   ? 'bg-muted text-foreground'
                   : 'bg-primary text-button-text'
-              }`}
+              } message ${message.role === 'user' ? 'user-message' : ''}`}
             >
               {message.content}
             </div>
@@ -110,6 +211,8 @@ export function PersonalizationChatbot({ isRecording }: Props) {
         )}
         <div ref={chatEndRef} />
       </div>
+
+      {/* Chat Input */}
       <div className="border-t border-muted p-4">
         <div className="flex gap-2">
           <input
@@ -119,11 +222,11 @@ export function PersonalizationChatbot({ isRecording }: Props) {
             onKeyPress={(e) => e.key === 'Enter' && handleSendMessage(input)}
             placeholder={isRecording ? 'Listening...' : 'Type a message...'}
             className="flex-1 rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-            disabled={isProcessing || isRecording}
+            disabled={isProcessing || isRecording || showThreadDialog}
           />
           <button
             onClick={() => handleSendMessage(input)}
-            disabled={isProcessing || isRecording || !input.trim()}
+            disabled={isProcessing || isRecording || !input.trim() || showThreadDialog}
             className="px-4 py-2 bg-primary text-button-text rounded-md hover:bg-secondary transition-colors disabled:opacity-50"
           >
             Send

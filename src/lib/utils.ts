@@ -49,9 +49,37 @@ export function formatArrayField(field: string[] | string | undefined): string {
   return field;
 }
 
+export function processNestedObject(obj: any): any {
+  if (!obj) return {};
+  
+  // Process each field in the nested object
+  return Object.entries(obj).reduce((processed, [key, value]) => {
+    // Skip null/undefined values
+    if (value === null || value === undefined) return processed;
+    
+    // Process arrays if the value is an array or string
+    if (Array.isArray(value) || typeof value === 'string') {
+      return { ...processed, [key]: getArrayField(value) };
+    }
+    
+    // Keep other primitive values as is
+    return { ...processed, [key]: value };
+  }, {});
+}
+
 export function processPersonalInfo(info: PersonalInfo): PersonalInfo {
+  if (!info) return {};
+
+  // Process nested objects first
+  const processedAddress = processNestedObject(info.address);
+  const processedClothingSizes = processNestedObject(info.clothing_sizes);
+  
   return {
     ...info,
+    // Handle nested objects
+    address: processedAddress,
+    clothing_sizes: processedClothingSizes,
+    // Process array fields
     interests: getArrayField(info.interests),
     hobbies: getArrayField(info.hobbies),
     favorite_foods: getArrayField(info.favorite_foods),
@@ -65,7 +93,8 @@ export function processPersonalInfo(info: PersonalInfo): PersonalInfo {
     health_concerns: getArrayField(info.health_concerns),
     keywords: getArrayField(info.keywords),
     expertise: getArrayField(info.expertise),
-    pets: getArrayField(info.pets)
+    pets: getArrayField(info.pets),
+    projects: getArrayField(info.projects)
   };
 }
 

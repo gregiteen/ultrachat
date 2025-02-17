@@ -39,12 +39,13 @@ class BraveSearchService {
       }
 
       const baseUrl = import.meta.env.DEV ? '/api/brave' : 'https://api.search.brave.com/res/v1';
-      console.log('Using search endpoint:', baseUrl);
+      console.log('Brave Search:', { baseUrl, query, count });
 
       const response = await fetch(`${baseUrl}/web/search?q=${encodeURIComponent(query)}&count=${count}&text_decorations=false&text_format=raw`, {
         headers: {
           'Accept': 'application/json',
-          'Authorization': `Bearer ${this.apiKey}`
+          'Authorization': `Bearer ${this.apiKey}`,
+          'X-Subscription-Token': this.apiKey
         }
       });
 
@@ -59,13 +60,15 @@ class BraveSearchService {
       }
 
       const data: BraveSearchResponse = await response.json();
+      console.log('Brave Search results:', data.web.results.length, 'items found');
       
       // Process and enhance results
-      return data.web.results.map((result, index) => ({
+      const enhancedResults = data.web.results.map((result, index) => ({
         ...result,
         source: new URL(result.url).hostname,
         relevance_score: 1 - (index * 0.1) // Simple decay function for relevance
       }));
+      return enhancedResults;
     } catch (error) {
       console.error('Brave search error:', error);
       if (error instanceof TypeError && error.message === 'Failed to fetch') {

@@ -1,20 +1,31 @@
 import React, { useState, useEffect } from 'react';
 import { useAuthStore } from '../store/auth';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { useThreadStore } from '../store/chat';
 
 export default function Auth() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLogin, setIsLogin] = useState(true);
   const [error, setError] = useState('');
-   const { user } = useAuthStore();
-   const navigate = useNavigate();
+  const { user, initialized, loading } = useAuthStore();
+  const navigate = useNavigate();
+  const location = useLocation();
 
-    useEffect(() => {
-        if (user) {
-            navigate('/chat');
-        }
-    }, [user, navigate]);
+  useEffect(() => {
+    // Only redirect to chat if user is already logged in
+    if (initialized && user) {
+      navigate('/chat');
+    }
+  }, [user, initialized, navigate]);
+
+  if (!initialized) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center">
+        <div className="animate-spin h-12 w-12 border-4 border-primary border-t-transparent rounded-full" />
+      </div>
+    );
+  }
 
   const { signIn, signUp } = useAuthStore();
 
@@ -25,9 +36,11 @@ export default function Auth() {
     try {
       if (isLogin) {
         await signIn(email, password);
+        navigate('/chat');
       } else {
         await signUp(email, password);
-      }
+        setError('Please check your email for verification link');
+      } 
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
     }
@@ -99,7 +112,8 @@ export default function Auth() {
             <div>
               <button
                 type="submit"
-                className="flex w-full justify-center rounded-md bg-primary px-3 py-2 text-sm font-semibold text-button-text shadow-sm hover:bg-secondary transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                disabled={loading}
+                className="flex w-full justify-center rounded-md bg-primary px-3 py-2 text-sm font-semibold text-button-text shadow-sm hover:bg-secondary transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-50"
               >
                 {isLogin ? 'Sign in' : 'Sign up'}
               </button>

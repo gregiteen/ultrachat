@@ -2,206 +2,198 @@
 
 ## Overview
 
-The enhanced personalization system provides a hybrid interface combining an empathetic AI-driven chat experience with structured form fields. The system focuses on creating an engaging, enthusiastic experience while gathering comprehensive personalization data.
+The personalization system provides a comprehensive user experience through a persistent form interface combined with an AI-driven chatbot assistant. The system maintains user preferences and personal information that can be toggled on/off in the main chat interface.
 
-## Components
+## Core Features
 
-### 1. Hybrid Interface
+### 1. Persistent Form Interface (PersonalizationPanel)
 
-#### Chat Interface
-- AI-driven dynamic conversation with empathetic, enthusiastic personality
-- Proactively highlights benefits of personalization
-- Contextual suggestions based on user responses
-- Natural language processing for information extraction
-- Real-time integration with form fields
-
-#### Form Interface
-- Structured fields for direct input
-- Synchronized with chat conversation
+- Editable form fields that persistently store user information
 - Categories:
-  * Basic Information (name, role, etc.)
-  * Communication Preferences
-  * Expertise & Interests
-  * Learning Style
-  * Custom Fields
+  * Basic Information (name, email, phone)
+  * Address Information
+  * Professional Details (job, company, projects)
+  * Personal Details (height, weight, sizes)
+  * Interests & Preferences
+  * Relationships
+  * Identity & Worldview
+  * Goals & Dreams
+  * Health Information
+  * Additional Notes
+- All entered information persists until explicitly changed or deleted by the user
+- Changes are automatically saved to the database
 
-### 2. File Management System
+### 2. Interactive AI Chatbot
 
-```typescript
-interface FileManagement {
-  files: Array<{
-    id: string;
-    name: string;
-    type: string;
-    size: number;
-    uploadDate: Date;
-    analysis: {
-      summary: string;
-      keyTopics: string[];
-      relevantContext: string;
-    };
-  }>;
-  
-  // File operations
-  uploadFile(file: File): Promise<void>;
-  removeFile(id: string): Promise<void>;
-  analyzeFile(id: string): Promise<Analysis>;
-  
-  // Context generation
-  generateFileContext(): string;
-}
-```
+- Assists users in filling out their personalization profile
+- Asks questions and encourages users to share personal details
+- Automatically updates the form fields as users provide information through chat
+- Information gathered through chat persists in the form fields
+- Bidirectional sync between chatbot and form fields
 
-### 3. Context Generation
+### 3. Preferences Profile
 
-The system generates personalization context from multiple sources:
-- Chat conversation analysis
-- Form field data
-- File analysis
-- User behavior patterns
+- Generated from combined form field data
+- Downloadable as PDF document
+- Used for personalization in the main chat
+- Accessible from the personalization area in the account page
+- Can be downloaded for use in other applications
 
-```typescript
-interface ContextGenerator {
-  // Extract context from chat
-  analyzeChatHistory(messages: Message[]): PersonalizationContext;
-  
-  // Combine with form data
-  mergeFormData(formData: FormFields): PersonalizationContext;
-  
-  // Integrate file context
-  incorporateFileContext(fileAnalysis: FileAnalysis[]): PersonalizationContext;
-  
-  // Generate final document
-  generateDocument(): PersonalizationDocument;
-}
-```
+### 4. Personalization Toggle
 
-### 4. System Message Generation
+- Available in the main chat interface
+- Enables/disables personalization features
+- When enabled, uses the Preferences Profile to personalize interactions
+- When disabled, provides standard chat experience
+
+### 5. File Management
+
+- Upload capability for relevant files
+- File viewer integrated into the personalization area
+- Uploaded files are used alongside the Preferences Profile
+- Files contribute to the personalization of the main chat
+
+## Technical Implementation
+
+### 1. State Management
 
 ```typescript
-interface SystemMessageGenerator {
-  basePrompt: string;
-  personalContext: PersonalizationDocument;
-  
-  generateMessage(): string;
+interface PersonalizationState {
+  personalInfo: PersonalInfo;
+  loading: boolean;
+  error: string | null;
+  isActive: boolean;
+  hasSeenWelcome: boolean;
+  initialized: boolean;
 }
+
+// Core operations
+- fetchPersonalInfo(): Retrieve stored personalization data
+- updatePersonalInfo(): Update and persist form field changes
+- togglePersonalization(): Enable/disable personalization in main chat
+- generatePreferencesProfile(): Create downloadable PDF
 ```
 
-Example System Message Template:
-```
-You are an empathetic and enthusiastic AI assistant who has been personalized for ${user.name}.
-
-Key Aspects of Our Interaction:
-- Communication Style: ${preferences.communicationStyle}
-- Areas of Expertise: ${expertise.join(', ')}
-- Learning Preferences: ${preferences.learningStyle}
-
-Personal Context:
-${personalContext}
-
-File-Based Knowledge:
-${fileContext}
-
-Special Instructions:
-${specialInstructions}
-
-Remember to:
-1. Be enthusiastic and supportive
-2. Reference relevant personal context naturally
-3. Adapt communication style to preferences
-4. Draw from shared document knowledge
-5. Maintain consistent personality traits
-```
-
-## Database Schema
+### 2. Database Schema
 
 ```sql
--- Enhanced user_personalization table
+-- User personalization table
 CREATE TABLE user_personalization (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID REFERENCES auth.users(id),
-  chat_history JSONB[],
-  form_data JSONB,
-  files JSONB[],
-  generated_context TEXT,
-  is_active BOOLEAN DEFAULT true,
+  personal_info JSONB,
+  is_active BOOLEAN DEFAULT false,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 
--- File management table
+-- Personalization files table
 CREATE TABLE personalization_files (
   id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
   user_id UUID REFERENCES auth.users(id),
   file_name TEXT NOT NULL,
   file_type TEXT NOT NULL,
-  file_size INTEGER NOT NULL,
-  file_path TEXT NOT NULL,
-  analysis JSONB,
+  file_url TEXT NOT NULL,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
 );
 ```
 
-## Implementation Steps
+### 3. AI Integration
 
-1. **Hybrid Interface Development**
-   - Create split-view layout
-   - Implement real-time sync between chat and forms
-   - Add file upload/management interface
+The AIPersonalizationService handles:
+- Interactive chat responses
+- Form field updates from chat interactions
+- Information extraction and persistence
+- Context-aware suggestions
 
-2. **AI Chat Enhancement**
-   - Implement empathetic personality
-   - Add context-aware responses
-   - Create benefit highlighting system
-   - Develop natural language understanding
+```typescript
+interface ChatResponse {
+  message: string;
+  type: "response" | "question" | "suggestion";
+  formUpdates?: Partial<PersonalInfo>; // Updates to persist in form
+}
 
-3. **File System Implementation**
-   - Build file upload/management UI
-   - Implement file analysis system
-   - Create context extraction pipeline
+interface PreferencesProfile {
+  personalInfo: PersonalInfo;
+  files: PersonalizationFile[];
+  preferences: {
+    communication: string;
+    learning: string;
+    workStyle: string;
+  };
+  context_awareness: {
+    background: string;
+    current_focus: string;
+    future_aspirations: string;
+  };
+}
+```
 
-4. **Context Generation**
-   - Implement chat analysis
-   - Create form data processor
-   - Build file context integrator
-   - Develop document generator
+### 4. UI Components
 
-5. **System Message Integration**
-   - Create dynamic message generator
-   - Implement context injection
-   - Add personality customization
+1. PersonalizationPanel
+   - Persistent form interface
+   - File management system
+   - AI chatbot integration
+   - PDF generation and download
+   - Real-time save functionality
 
-## User Flow
+2. PersonalizationToggle
+   - Enable/disable personalization
+   - Visual feedback for active state
+   - Integrated in main chat interface
 
-1. User enters personalization interface
-2. System presents hybrid interface (chat + forms)
-3. AI initiates enthusiastic conversation while user can:
-   - Engage in natural conversation
-   - Fill out form fields
-   - Upload and manage files
-4. System continuously updates context
-5. User reviews and submits
-6. System generates comprehensive document
-7. Personalization is active in future chats
+3. FileManager
+   - File upload interface
+   - File viewer
+   - File type validation
+   - Storage management
 
-## Security & Privacy
+### 5. Data Flow
 
-- End-to-end encryption for sensitive data
+1. User Input Methods:
+   - Direct form field editing (persists automatically)
+   - Chatbot interaction (updates form fields)
+   - File uploads (stored and linked to profile)
+
+2. Data Storage:
+   - Automatic form field persistence
+   - Real-time database updates
+   - File storage and management
+   - PDF generation and caching
+
+3. Data Usage:
+   - Main chat personalization
+   - PDF profile generation
+   - External application integration
+   - Context-aware responses
+
+### 6. Security & Privacy
+
+- Row Level Security (RLS) policies
 - Secure file storage
-- Access control
-- Data retention policies
+- Encrypted personal information
+- User-specific access control
+- Session management
 
-## Performance
+## Implementation Status
 
-- Async file processing
-- Incremental context updates
-- Optimized real-time sync
-- Lazy loading for file analysis
+### Completed
+- Persistent form interface
+- Database schema and migrations
+- AI chatbot integration
+- File management system
+- PDF generation
+- Personalization toggle
+- Real-time updates
 
-## Future Enhancements
+### In Progress
+- Enhanced file type support
+- Improved PDF formatting
+- Advanced personalization algorithms
 
-1. Machine learning for better personalization
-2. Advanced file type support
-3. Integration with external tools
-4. Collaborative personalization
-5. Context versioning and history
+### Future Enhancements
+- Additional file analysis
+- Enhanced context generation
+- Profile sharing capabilities
+- Version control for profiles

@@ -1,173 +1,226 @@
 import React, { useState } from 'react';
-import { Mail, Calendar, MessageSquare, Video, AlertCircle, CheckCircle2, XCircle, Plus } from 'lucide-react';
 import { useIntegrationsStore } from '../../store/integrations';
-import { CustomIntegrationForm } from './CustomIntegrationForm';
-import { CustomIntegrationList } from './CustomIntegrationList';
-import type { Integration } from '../../types';
+import { ClipboardMonitor } from './ClipboardMonitor';
+import { Lock, ExternalLink } from 'lucide-react';
 
-const INTEGRATION_CONFIGS = {
-  gmail: {
-    name: 'Gmail',
-    icon: Mail,
-    description: 'Connect your Gmail account to send and receive emails',
-    scopes: ['https://www.googleapis.com/auth/gmail.modify'],
-  },
-  google_calendar: {
-    name: 'Google Calendar',
-    icon: Calendar,
-    description: 'Sync and manage your calendar events',
-    scopes: ['https://www.googleapis.com/auth/calendar'],
-  },
-  slack: {
+interface IntegrationConfig {
+  name: string;
+  category: 'communication' | 'productivity' | 'social' | 'development' | 'storage' | 'media' | 'database';
+  logo: string;
+  apiKeyUrl: string;
+  docsUrl: string;
+}
+
+const INTEGRATIONS: IntegrationConfig[] = [
+  {
     name: 'Slack',
-    icon: MessageSquare,
-    description: 'Connect with your Slack workspace',
-    scopes: ['chat:write', 'channels:read'],
+    category: 'communication',
+    logo: 'https://cdn.simpleicons.org/slack',
+    apiKeyUrl: 'https://api.slack.com/apps',
+    docsUrl: 'https://api.slack.com/docs',
   },
-  zoom: {
-    name: 'Zoom',
-    icon: Video,
-    description: 'Schedule and manage Zoom meetings',
-    scopes: ['meeting:write', 'user:read'],
+  {
+    name: 'GitHub',
+    category: 'development',
+    logo: 'https://cdn.simpleicons.org/github',
+    apiKeyUrl: 'https://github.com/settings/tokens',
+    docsUrl: 'https://docs.github.com/rest',
   },
-};
+  {
+    name: 'Google Drive',
+    category: 'storage',
+    logo: 'https://cdn.simpleicons.org/googledrive',
+    apiKeyUrl: 'https://console.cloud.google.com/apis/credentials',
+    docsUrl: 'https://developers.google.com/drive/api/v3/about-sdk',
+  },
+  {
+    name: 'Twitter',
+    category: 'social',
+    logo: 'https://cdn.simpleicons.org/twitter',
+    apiKeyUrl: 'https://developer.twitter.com/en/portal/dashboard',
+    docsUrl: 'https://developer.twitter.com/en/docs',
+  },
+  {
+    name: 'Facebook',
+    category: 'social',
+    logo: 'https://cdn.simpleicons.org/facebook',
+    apiKeyUrl: 'https://developers.facebook.com/apps',
+    docsUrl: 'https://developers.facebook.com/docs',
+  },
+  {
+    name: 'Instagram',
+    category: 'social',
+    logo: 'https://cdn.simpleicons.org/instagram',
+    apiKeyUrl: 'https://www.instagram.com/developer',
+    docsUrl: 'https://developers.facebook.com/docs/instagram-api',
+  },
+  {
+    name: 'WhatsApp',
+    category: 'communication',
+    logo: 'https://cdn.simpleicons.org/whatsapp',
+    apiKeyUrl: 'https://developers.facebook.com/apps',
+    docsUrl: 'https://developers.facebook.com/docs/whatsapp',
+  },
+  {
+    name: 'Netflix',
+    category: 'media',
+    logo: 'https://cdn.simpleicons.org/netflix',
+    apiKeyUrl: 'https://developer.netflix.com',
+    docsUrl: 'https://developer.netflix.com/docs',
+  },
+  {
+    name: 'Hulu',
+    category: 'media',
+    logo: 'https://cdn.simpleicons.org/hulu',
+    apiKeyUrl: 'https://developer.hulu.com',
+    docsUrl: 'https://developer.hulu.com/docs',
+  },
+  {
+    name: 'Feedly',
+    category: 'productivity',
+    logo: 'https://cdn.simpleicons.org/feedly',
+    apiKeyUrl: 'https://developer.feedly.com',
+    docsUrl: 'https://developer.feedly.com/docs',
+  },
+  {
+    name: 'Google Maps',
+    category: 'productivity',
+    logo: 'https://cdn.simpleicons.org/googlemaps',
+    apiKeyUrl: 'https://console.cloud.google.com/apis/credentials',
+    docsUrl: 'https://developers.google.com/maps/documentation',
+  },
+  {
+    name: 'YouTube',
+    category: 'media',
+    logo: 'https://cdn.simpleicons.org/youtube',
+    apiKeyUrl: 'https://console.cloud.google.com/apis/credentials',
+    docsUrl: 'https://developers.google.com/youtube/v3',
+  },
+];
+
+const CATEGORIES = {
+  communication: 'Communication',
+  productivity: 'Productivity',
+  social: 'Social Media',
+  development: 'Development',
+  storage: 'Storage',
+  media: 'Media',
+  database: 'Database',
+} as const;
 
 export function IntegrationsPanel() {
-  const {
-    integrations,
-    connectIntegration,
-    disconnectIntegration,
-    addCustomIntegration,
-    testCustomIntegration,
-    deleteCustomIntegration
-  } = useIntegrationsStore();
-  const [connecting, setConnecting] = useState<string | null>(null);
-  const [showCustomForm, setShowCustomForm] = useState(false);
+  const [selectedIntegration, setSelectedIntegration] = useState<IntegrationConfig | null>(null);
+  const { integrations, connectIntegration, disconnectIntegration } = useIntegrationsStore();
 
-  const handleConnect = async (type: Integration['type']) => {
-    setConnecting(type);
+  const handleDisconnect = async (type: string) => {
     try {
-      await connectIntegration(type);
-    } catch (error) {
-      console.error('Failed to connect:', error);
-    } finally {
-      setConnecting(null);
-    }
-  };
-
-  const handleDisconnect = async (type: Integration['type']) => {
-    try {
-      await disconnectIntegration(type);
+      await disconnectIntegration(type.toLowerCase());
     } catch (error) {
       console.error('Failed to disconnect:', error);
     }
   };
 
-  const handleAddCustom = async (data: { name: string; endpoint: string; apiKey: string }) => {
-    await addCustomIntegration(data);
-    setShowCustomForm(false);
-  };
-
-  const getStatusIcon = (status: Integration['status']) => {
-    switch (status) {
-      case 'connected':
-        return <CheckCircle2 className="h-5 w-5 text-green-600" />;
-      case 'error':
-        return <AlertCircle className="h-5 w-5 text-red-600" />;
-      default:
-        return <XCircle className="h-5 w-5 text-gray-400" />;
-    }
-  };
-
-  const customIntegrations = integrations.filter(i => i.type === 'custom');
-  const standardIntegrations = integrations.filter(i => i.type !== 'custom');
-
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-gray-900">Integrations</h2>
-        <button
-          onClick={() => setShowCustomForm(true)}
-          className="flex items-center gap-2 rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-        >
-          <Plus className="h-4 w-4" />
-          Add Custom Integration
-        </button>
-      </div>
+    <div className="space-y-8">
+      {/* Always render clipboard monitor for API key detection */}
+      <ClipboardMonitor />
 
-      {/* Standard Integrations */}
-      <div className="grid gap-6 md:grid-cols-2">
-        {Object.entries(INTEGRATION_CONFIGS).map(([key, config]) => {
-          const integration = standardIntegrations.find((i) => i.type === key);
-          const Icon = config.icon;
+      {/* Integration categories */}
+      {Object.entries(CATEGORIES).map(([category, label]) => {
+        const categoryIntegrations = INTEGRATIONS.filter(i => i.category === category);
+        if (categoryIntegrations.length === 0) return null;
 
-          return (
-            <div
-              key={key}
-              className="rounded-lg border bg-white p-6 shadow-sm"
-            >
-              <div className="flex items-start justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="rounded-lg bg-blue-100 p-2">
-                    <Icon className="h-6 w-6 text-blue-600" />
-                  </div>
-                  <div>
-                    <h3 className="font-medium text-gray-900">{config.name}</h3>
-                    <p className="mt-1 text-sm text-gray-500">
-                      {config.description}
-                    </p>
-                  </div>
-                </div>
-                {integration && getStatusIcon(integration.status)}
-              </div>
+        return (
+          <div key={category} className="space-y-4">
+            <h3 className="text-lg font-semibold text-gray-900">{label}</h3>
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+              {categoryIntegrations.map(integration => {
+                const isConnected = integrations.some(i => 
+                  i.type.toLowerCase() === integration.name.toLowerCase()
+                );
 
-              <div className="mt-4">
-                {integration?.status === 'connected' ? (
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-500">
-                      Last synced:{' '}
-                      {integration.last_synced
-                        ? new Date(integration.last_synced).toLocaleDateString()
-                        : 'Never'}
-                    </span>
-                    <button
-                      onClick={() => handleDisconnect(integration.type)}
-                      className="text-sm text-red-600 hover:text-red-700"
-                    >
-                      Disconnect
-                    </button>
-                  </div>
-                ) : (
-                  <button
-                    onClick={() => handleConnect(key as Integration['type'])}
-                    disabled={connecting === key}
-                    className="w-full rounded-lg border border-blue-600 px-4 py-2 text-sm font-medium text-blue-600 hover:bg-blue-50 disabled:opacity-50"
+                return (
+                  <div
+                    key={integration.name}
+                    className={`relative rounded-lg border bg-white p-4 transition-all hover:shadow-md cursor-pointer
+                      ${selectedIntegration?.name === integration.name ? 'ring-2 ring-blue-500' : ''}
+                      ${isConnected ? 'border-green-200' : 'border-gray-200'}`}
+                    onClick={() => setSelectedIntegration(integration)}
                   >
-                    {connecting === key ? 'Connecting...' : 'Connect'}
-                  </button>
-                )}
+                    <div className="flex flex-col items-center gap-2">
+                      <img
+                        src={integration.logo}
+                        alt={integration.name}
+                        className="h-12 w-12 object-contain"
+                      />
+                      <span className="text-sm font-medium text-gray-900">
+                        {integration.name}
+                      </span>
+                      {isConnected && (
+                        <span className="absolute top-2 right-2 text-green-500">
+                          <Lock className="h-4 w-4" />
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+
+      {/* Integration details */}
+      {selectedIntegration && (
+        <div className="mt-8 rounded-lg border border-gray-200 bg-white p-6">
+          <div className="flex items-start justify-between">
+            <div className="flex items-center gap-4">
+              <img
+                src={selectedIntegration.logo}
+                alt={selectedIntegration.name}
+                className="h-16 w-16 object-contain"
+              />
+              <div>
+                <h3 className="text-xl font-semibold text-gray-900">
+                  {selectedIntegration.name}
+                </h3>
+                <p className="text-sm text-gray-500">
+                  {CATEGORIES[selectedIntegration.category]}
+                </p>
               </div>
             </div>
-          );
-        })}
-      </div>
-
-      {/* Custom Integrations */}
-      <div className="mt-8">
-        <h3 className="text-lg font-medium text-gray-900">Custom Integrations</h3>
-        <CustomIntegrationList
-          integrations={customIntegrations}
-          onDelete={deleteCustomIntegration}
-          onTest={testCustomIntegration}
-        />
-      </div>
-
-      {/* Custom Integration Form */}
-      {showCustomForm && (
-        <CustomIntegrationForm
-          onSubmit={handleAddCustom}
-          onClose={() => setShowCustomForm(false)}
-        />
+            <div className="flex items-center gap-4">
+              <a
+                href={selectedIntegration.docsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700"
+              >
+                Documentation
+                <ExternalLink className="h-4 w-4" />
+              </a>
+              {integrations.some(i => 
+                i.type.toLowerCase() === selectedIntegration.name.toLowerCase()
+              ) ? (
+                <button
+                  onClick={() => handleDisconnect(selectedIntegration.name)}
+                  className="rounded-md bg-red-50 px-4 py-2 text-sm font-medium text-red-600 hover:bg-red-100"
+                >
+                  Disconnect
+                </button>
+              ) : (
+                <a
+                  href={selectedIntegration.apiKeyUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-md bg-blue-50 px-4 py-2 text-sm font-medium text-blue-600 hover:bg-blue-100"
+                >
+                  Get API Key
+                </a>
+              )}
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

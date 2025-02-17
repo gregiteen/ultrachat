@@ -8,6 +8,16 @@ export interface TaskInput {
   due_date?: string;
   status: 'todo' | 'in_progress' | 'done';
   parent_id?: string;
+  estimated_duration?: string;
+  dependencies?: string[];
+  automation_rules?: {
+    type: 'recurring' | 'dependent' | 'deadline';
+    config: {
+      frequency?: string;
+      dependsOn?: string[];
+      notifyBefore?: number;
+    };
+  };
 }
 
 export class TaskExecutor {
@@ -25,6 +35,9 @@ export class TaskExecutor {
         due_date: input.due_date,
         status: input.status,
         parent_id: input.parent_id,
+        estimated_duration: input.estimated_duration,
+        dependencies: input.dependencies,
+        automation_rules: input.automation_rules
       })
       .select()
       .single();
@@ -118,5 +131,30 @@ export class TaskExecutor {
 
   async getSubtasks(parentId: string): Promise<Task[]> {
     return this.listTasks({ parent_id: parentId });
+  }
+
+  async getDependentTasks(taskId: string): Promise<Task[]> {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('User not authenticated');
+
+    const { data, error } = await supabase
+      .from('tasks')
+      .select('*')
+      .eq('user_id', user.id)
+      .contains('dependencies', [taskId]);
+
+    if (error) throw error;
+    return data || [];
+  }
+
+  async updateDependencies(taskId: string, dependencies: string[]): Promise<Task> {
+    return this.updateTask(taskId, { dependencies });
+  }
+
+  async updateAutomationRules(
+    taskId: string,
+    automationRules: TaskInput['automation_rules']
+  ): Promise<Task> {
+    return this.updateTask(taskId, { automation_rules: automationRules });
   }
 }

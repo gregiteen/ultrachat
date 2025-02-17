@@ -2,12 +2,13 @@ import React, { useState, useRef } from 'react';
 import { Send, Mic, Volume2, Edit, Paperclip, Image, Command, Search } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useContextStore } from '../store/context';
-import ContextEditor from './ContextEditor';
-import { VoiceRecorder } from './VoiceRecorder';
 import type { Context } from '../types';
+import { VoiceRecorder } from './VoiceRecorder';
 import { elevenlabs } from '../lib/elevenlabs';
 import { speechRecognition } from '../lib/speech';
 import { supabase } from '../lib/supabase';
+import { Spinner } from '../design-system/components/feedback/Spinner';
+import ContextEditor from './ContextEditor';
 
 interface ChatInputProps {
   onSendMessage: (content: string, files?: string[], contextId?: string, isSystemMessage?: boolean, skipAiResponse?: boolean, forceSearch?: boolean) => Promise<void>;
@@ -16,6 +17,8 @@ interface ChatInputProps {
   setIsVoiceToTextMode?: (value: boolean) => void;
   isVoiceToVoiceMode?: boolean;
   setIsVoiceToVoiceMode?: (value: boolean) => void;
+  isSearchMode?: boolean;
+  setIsSearchMode?: (value: boolean) => void;
 }
 
 export function ChatInput({
@@ -25,6 +28,8 @@ export function ChatInput({
   setIsVoiceToTextMode,
   isVoiceToVoiceMode = false,
   setIsVoiceToVoiceMode,
+  isSearchMode = false,
+  setIsSearchMode,
 }: ChatInputProps) {
   const [message, setMessage] = useState('');
   const { contexts, activeContext, setActiveContext } = useContextStore();
@@ -35,8 +40,6 @@ export function ChatInput({
   const [speechRecognitionError, setSpeechRecognitionError] = useState<string | null>(null);
   const [isAudioPlaying, setIsAudioPlaying] = useState(false);
   const [filePaths, setFilePaths] = useState<string[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
-  const [searchModeEnabled, setSearchModeEnabled] = useState(false);
   const [showContextMenu, setShowContextMenu] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
@@ -67,10 +70,17 @@ export function ChatInput({
     e.preventDefault();
     if (!message.trim() || isLoading) return;
 
-    await onSendMessage(message, filePaths, undefined, false, false, searchModeEnabled);
+    const currentMessage = message;
     setMessage('');
     setTranscribedText('');
-    setFilePaths([]);
+    
+    try {
+      await onSendMessage(currentMessage, filePaths, activeContext?.id, false, false, isSearchMode);
+      setFilePaths([]);
+    } catch (error) {
+      setMessage(currentMessage);
+      console.error('Failed to send message:', error);
+    }
   };
 
   const handleEditContext = (context: Context) => {
@@ -97,7 +107,7 @@ export function ChatInput({
         audio.play();
       }
 
-      await onSendMessage(text, [], undefined, false, false, searchModeEnabled);
+      await onSendMessage(text, [], activeContext?.id, false, false, isSearchMode);
       setTranscribedText('');
     } catch (error) {
       console.error('Error processing voice:', error);
@@ -167,7 +177,7 @@ export function ChatInput({
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
             >
-              + New Context
+              + New Assistant
             </motion.button>
           </motion.div>
         )}
@@ -210,7 +220,7 @@ export function ChatInput({
             <textarea
               value={message}
               onChange={(e) => setMessage(e.target.value)}
-              placeholder={transcribedText || "Type a message..."}
+              placeholder={transcribedText || (isSearchMode ? "Ask a question..." : "Type a message...")}
               className="w-full bg-transparent text-foreground placeholder:text-muted-foreground focus:outline-none"
               rows={1}
               style={{
@@ -303,17 +313,21 @@ export function ChatInput({
 
             <motion.button
               type="button"
-              onClick={() => setSearchModeEnabled(!searchModeEnabled)}
-              aria-label={searchModeEnabled ? 'Search mode enabled' : 'Search mode disabled'}
+              onClick={() => setIsSearchMode?.(!isSearchMode)}
+              aria-label={isSearchMode ? 'Search mode enabled' : 'Search mode disabled'}
               className={`transition-all p-2 rounded-lg ${
-                searchModeEnabled
-                  ? 'text-green-500 bg-green-500/10 scale-110'
+                isSearchMode
+                  ? 'text-green-500 bg-green-500/20 scale-110'
                   : 'text-icon-color hover:text-icon-hover hover:bg-muted/10'
               }`}
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
             >
-              <Search className="h-5 w-5" />
+              {isLoading && isSearchMode ? (
+                <Spinner className="h-5 w-5" />
+              ) : (
+                <Search className="h-5 w-5" />
+              )}
             </motion.button>
 
             <motion.button
@@ -323,7 +337,11 @@ export function ChatInput({
               whileTap={{ scale: 0.95 }}
               disabled={!message.trim() || isLoading || isAudioPlaying || isVoiceToVoiceMode}
             >
-              <Send className="h-5 w-5" />
+              {isLoading && !isSearchMode ? (
+                <Spinner className="h-5 w-5" />
+              ) : (
+                <Send className="h-5 w-5" />
+              )}
             </motion.button>
           </div>
         </motion.div>

@@ -1,154 +1,130 @@
-export interface CalendarEvent {
+import type { ServiceIntegration, ServiceAction } from '../../../lib/task-management/WorkflowEngine';
+import type { Task } from '../../../types/index';
+
+interface CalendarEvent {
   id: string;
-  summary: string;
-  description: string;
-  start: {
-    dateTime: string;
-    timeZone: string;
-  };
-  end: {
-    dateTime: string;
-    timeZone: string;
-  };
-  attendees: Array<{
-    email: string;
-    responseStatus?: 'needsAction' | 'declined' | 'tentative' | 'accepted';
+  title: string;
+  description?: string;
+  startTime: Date;
+  endTime: Date;
+  reminders?: Array<{
+    method: 'email' | 'popup';
+    minutes: number;
   }>;
-  location?: string;
-  status: 'confirmed' | 'tentative' | 'cancelled';
-  created: string;
-  updated: string;
 }
 
-interface CalendarCredentials {
+interface CreateEventContext {
+  due_date?: string;
+}
+
+interface UpdateEventContext {
+  eventId?: string;
+}
+
+interface ReminderContext {
+  eventId?: string;
+  hoursRemaining?: number;
+}
+
+export interface CalendarCredentials {
   access_token: string;
   expires_at: number;
 }
 
-declare global {
-  interface Window {
-    gapi: any;
+export class CalendarExecutor {
+  constructor(credentials: CalendarCredentials) {}
+}
+
+class CalendarService {
+  private events: Map<string, CalendarEvent> = new Map();
+
+  async createEvent(event: Omit<CalendarEvent, 'id'>): Promise<CalendarEvent> {
+    const id = Math.random().toString(36).substring(7);
+    const newEvent = { ...event, id };
+    this.events.set(id, newEvent);
+    return newEvent;
+  }
+
+  async updateEvent(id: string, updates: Partial<CalendarEvent>): Promise<CalendarEvent> {
+    const event = this.events.get(id);
+    if (!event) {
+      throw new Error(`Event not found: ${id}`);
+    }
+    const updatedEvent = { ...event, ...updates };
+    this.events.set(id, updatedEvent);
+    return updatedEvent;
+  }
+
+  async addReminder(eventId: string, minutes: number): Promise<void> {
+    const event = this.events.get(eventId);
+    if (!event) {
+      throw new Error(`Event not found: ${eventId}`);
+    }
+    
+    event.reminders = [
+      ...(event.reminders || []),
+      { method: 'popup', minutes }
+    ];
+    
+    this.events.set(eventId, event);
   }
 }
 
-export class CalendarExecutor {
-  private accessToken: string;
+const calendarService = new CalendarService();
 
-  constructor(credentials: CalendarCredentials) {
-    this.accessToken = credentials.access_token;
-  }
+export const calendarIntegration: ServiceIntegration = {
+  id: 'calendar',
+  name: 'Calendar Integration',
+  actions: {
+    createEvent: {
+      type: 'calendar:createEvent' as const,
+      handler: async (task: Task) => {
+        if (!task.due_date) return;
 
-  private async loadGapiClient(): Promise<void> {
-    if (!window.gapi?.client?.calendar) {
-      await new Promise<void>((resolve) => {
-        const script = document.createElement('script');
-        script.src = 'https://apis.google.com/js/api.js';
-        script.onload = async () => {
-          await new Promise<void>(r => window.gapi.load('client', r));
-          await window.gapi.client.init({});
-          await window.gapi.client.load('calendar', 'v3');
-          resolve();
-        };
-        document.head.appendChild(script);
-      });
+        const startTime = new Date(task.due_date);
+        const endTime = new Date(startTime);
+        endTime.setHours(endTime.getHours() + 1);
+
+        await calendarService.createEvent({
+          title: task.title,
+          description: task.description,
+          startTime,
+          endTime,
+          reminders: [
+            { method: 'popup', minutes: 30 }
+          ]
+        });
+      }
+    },
+
+    updateEvent: {
+      type: 'calendar:updateEvent' as const,
+      handler: async (task: Task, context: UpdateEventContext) => {
+        if (!context.eventId) return;
+
+        await calendarService.updateEvent(context.eventId, {
+          title: task.title,
+          description: task.description,
+          ...(task.due_date && {
+            startTime: new Date(task.due_date)
+          })
+        });
+      }
+    },
+
+    addReminder: {
+      type: 'calendar:addReminder' as const,
+      handler: async (task: Task, context: ReminderContext) => {
+        if (!context.eventId || !context.hoursRemaining) return;
+
+        await calendarService.addReminder(
+          context.eventId,
+          context.hoursRemaining * 60
+        );
+      },
+      condition: (task: Task, context: ReminderContext) => {
+        return !!context.hoursRemaining && context.hoursRemaining > 0;
+      }
     }
   }
-
-  private async getCalendarClient() {
-    await this.loadGapiClient();
-    window.gapi.client.setToken({
-      access_token: this.accessToken
-    });
-    return window.gapi.client.calendar;
-  }
-
-  async listEvents(options: {
-    timeMin?: string;
-    timeMax?: string;
-    maxResults?: number;
-    query?: string;
-  } = {}): Promise<CalendarEvent[]> {
-    const calendar = await this.getCalendarClient();
-    
-    const response = await calendar.events.list({
-      calendarId: 'primary',
-      timeMin: options.timeMin || new Date().toISOString(),
-      timeMax: options.timeMax,
-      maxResults: options.maxResults || 10,
-      singleEvents: true,
-      orderBy: 'startTime',
-      q: options.query,
-    });
-
-    return response.result.items as CalendarEvent[];
-  }
-
-  async createEvent(options: {
-    summary: string;
-    description?: string;
-    start: { dateTime: string; timeZone?: string };
-    end: { dateTime: string; timeZone?: string };
-    attendees?: string[];
-    location?: string;
-  }): Promise<CalendarEvent> {
-    const calendar = await this.getCalendarClient();
-
-    const response = await calendar.events.insert({
-      calendarId: 'primary',
-      resource: {
-        summary: options.summary,
-        description: options.description,
-        start: options.start,
-        end: options.end,
-        attendees: options.attendees?.map(email => ({ email })),
-        location: options.location,
-      },
-    });
-
-    return response.result as CalendarEvent;
-  }
-
-  async updateEvent(eventId: string, options: {
-    summary?: string;
-    description?: string;
-    start?: { dateTime: string; timeZone?: string };
-    end?: { dateTime: string; timeZone?: string };
-    attendees?: string[];
-    location?: string;
-  }): Promise<CalendarEvent> {
-    const calendar = await this.getCalendarClient();
-
-    const response = await calendar.events.patch({
-      calendarId: 'primary',
-      eventId,
-      resource: {
-        summary: options.summary,
-        description: options.description,
-        start: options.start,
-        end: options.end,
-        attendees: options.attendees?.map(email => ({ email })),
-        location: options.location,
-      },
-    });
-
-    return response.result as CalendarEvent;
-  }
-
-  async deleteEvent(eventId: string): Promise<void> {
-    const calendar = await this.getCalendarClient();
-
-    await calendar.events.delete({
-      calendarId: 'primary',
-      eventId,
-    });
-  }
-
-  async findConflicts(start: string, end: string): Promise<CalendarEvent[]> {
-    const events = await this.listEvents({
-      timeMin: start,
-      timeMax: end,
-    });
-
-    return events.filter(event => event.status !== 'cancelled');
-  }
-}
+};

@@ -1,29 +1,66 @@
 import { Theme } from './types';
+import type { Variants, Transition } from 'framer-motion';
 
-/**
- * Page transition variants for Framer Motion
- */
-export const pageTransitions = {
-  initial: { opacity: 0, x: -10 },
-  animate: { opacity: 1, x: 0 },
-  exit: { opacity: 0, x: 10 },
-  transition: {
-    duration: 0.3,
-    ease: 'easeInOut'
+// Base transitions that can be extended
+export const baseTransition: Transition = {
+  duration: 0.2,
+  ease: [0.4, 0, 0.2, 1], // Custom easing for smooth animations
+};
+
+export const springTransition: Transition = {
+  type: 'spring',
+  stiffness: 400,
+  damping: 30,
+};
+
+// Page transition variants
+export const pageTransitions: Variants = {
+  initial: { 
+    opacity: 0, 
+    x: -10,
+    transition: baseTransition 
+  },
+  animate: { 
+    opacity: 1, 
+    x: 0,
+    transition: baseTransition 
+  },
+  exit: { 
+    opacity: 0, 
+    x: 10,
+    transition: baseTransition 
   }
 };
 
-/**
- * Loading state animations for different components
- */
+// Loading state variants
 export const loadingStates = {
   button: {
     initial: { scale: 1 },
     loading: {
       scale: [1, 0.98, 1],
       transition: {
+        ...baseTransition,
         duration: 1,
-        repeat: Infinity
+        repeat: Infinity,
+        repeatType: 'reverse'
+      }
+    }
+  },
+  spinner: {
+    rotate: {
+      rotate: 360,
+      transition: {
+        duration: 1,
+        repeat: Infinity,
+        ease: 'linear'
+      }
+    },
+    dash: {
+      strokeDasharray: ['1 100', '80 100', '1 100'],
+      transition: {
+        duration: 1.5,
+        repeat: Infinity,
+        ease: 'easeInOut'
       }
     }
   },
@@ -33,29 +70,89 @@ export const loadingStates = {
       opacity: [0.5, 0.8, 0.5],
       transition: {
         duration: 1.5,
-        repeat: Infinity
+        repeat: Infinity,
+        ease: 'easeInOut'
       }
     }
   }
-};
+} as const;
 
-/**
- * Micro-interaction variants for interactive elements
- */
+// Micro-interaction variants
 export const microInteractions = {
   hover: {
     scale: 1.02,
     transition: {
-      duration: 0.2,
-      ease: 'easeInOut'
+      ...baseTransition,
+      duration: 0.2
     }
   },
   tap: {
     scale: 0.98,
     transition: {
-      duration: 0.1,
-      ease: 'easeInOut'
+      ...baseTransition,
+      duration: 0.1
     }
+  },
+  focus: {
+    scale: 1.01,
+    transition: springTransition
+  }
+} as const;
+
+// Modal/Dialog animations
+export const dialogTransitions: Variants = {
+  initial: { 
+    opacity: 0, 
+    scale: 0.95,
+    transition: baseTransition
+  },
+  animate: { 
+    opacity: 1, 
+    scale: 1,
+    transition: springTransition
+  },
+  exit: { 
+    opacity: 0, 
+    scale: 0.95,
+    transition: baseTransition
+  }
+};
+
+// Dropdown/Menu animations
+export const menuTransitions: Variants = {
+  initial: { 
+    opacity: 0, 
+    y: -4,
+    transition: baseTransition
+  },
+  animate: { 
+    opacity: 1, 
+    y: 0,
+    transition: springTransition
+  },
+  exit: { 
+    opacity: 0, 
+    y: -4,
+    transition: baseTransition
+  }
+};
+
+// Toast/Notification animations
+export const toastTransitions: Variants = {
+  initial: { 
+    opacity: 0, 
+    x: 20,
+    transition: baseTransition
+  },
+  animate: { 
+    opacity: 1, 
+    x: 0,
+    transition: springTransition
+  },
+  exit: { 
+    opacity: 0, 
+    x: 20,
+    transition: baseTransition
   }
 };
 
@@ -66,7 +163,7 @@ export function generateFadeTransitions(theme: Theme): string {
   return `
     .fade-enter {
       opacity: 0;
-      transform: translateY(10px);
+      transform: translateY(8px);
     }
     
     .fade-enter-active {
@@ -83,7 +180,7 @@ export function generateFadeTransitions(theme: Theme): string {
     
     .fade-exit-active {
       opacity: 0;
-      transform: translateY(-10px);
+      transform: translateY(-8px);
       transition: opacity ${theme.animation.duration.normal} ${theme.animation.easing.easeIn},
                   transform ${theme.animation.duration.normal} ${theme.animation.easing.easeIn};
     }
@@ -107,6 +204,19 @@ export function generateReducedMotionStyles(): string {
       .fade-exit, .fade-exit-active {
         transform: none !important;
         transition: opacity 0.01ms !important;
+      }
+
+      /* Disable specific animations */
+      .animate-spin,
+      .animate-pulse,
+      .animate-bounce {
+        animation: none !important;
+      }
+
+      /* Ensure instant state changes */
+      [data-motion="true"] {
+        transition: none !important;
+        transform: none !important;
       }
     }
   `;

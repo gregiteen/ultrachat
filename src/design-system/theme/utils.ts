@@ -2,11 +2,23 @@ import type { Theme } from './types';
 import { themes } from './variants';
 import { generateFadeTransitions, generateReducedMotionStyles } from './animations';
 
+// Cache for generated CSS strings
+const cssCache = new Map<string, string>();
+
+// Debounce theme change events
+let themeChangeTimeout: NodeJS.Timeout;
+
 /**
- * Converts a theme object into CSS variables string
+ * Converts a theme object into CSS variables string with caching
  */
 export function generateThemeVariables(theme: Theme): string {
-  return `
+  const cacheKey = `theme-${theme.id}`;
+  
+  if (cssCache.has(cacheKey)) {
+    return cssCache.get(cacheKey)!;
+  }
+
+  const css = `
     :root {
       /* Colors */
       --background: ${theme.colors.background};
@@ -69,61 +81,110 @@ export function generateThemeVariables(theme: Theme): string {
       --radius-full: ${theme.borderRadius.full};
     }
 
+    /* Theme transition styles */
+    :root {
+      transition: background-color 0.3s ease,
+                  color 0.3s ease;
+    }
+
+    /* Theme-specific transitions */
+    [data-theme="${theme.id}"] * {
+      transition: background-color 0.3s ease,
+                  border-color 0.3s ease,
+                  color 0.3s ease,
+                  box-shadow 0.3s ease;
+    }
+
     ${generateFadeTransitions(theme)}
     ${generateReducedMotionStyles()}
   `;
+
+  cssCache.set(cacheKey, css);
+  return css;
 }
 
 /**
- * Applies a theme by injecting CSS variables into the document
+ * Safely applies a theme by injecting CSS variables into the document
  */
 export function applyTheme(theme: Theme): void {
-  // Remove any existing theme style tag
-  const existingStyle = document.getElementById('theme-variables');
-  if (existingStyle) {
-    existingStyle.remove();
+  try {
+    // Remove any existing theme style tag
+    const existingStyle = document.getElementById('theme-variables');
+    if (existingStyle) {
+      existingStyle.remove();
+    }
+
+    // Create and inject new theme variables
+    const style = document.createElement('style');
+    style.id = 'theme-variables';
+    style.textContent = generateThemeVariables(theme);
+    document.head.appendChild(style);
+
+    // Update data-theme attribute
+    document.documentElement.setAttribute('data-theme', theme.id);
+
+    // Store the current theme ID in localStorage
+    localStorage.setItem('selected-theme', theme.id);
+
+    // Debounce theme change event
+    clearTimeout(themeChangeTimeout);
+    themeChangeTimeout = setTimeout(() => {
+      window.dispatchEvent(new CustomEvent('themechange', { detail: theme }));
+    }, 100);
+  } catch (error) {
+    console.error('Failed to apply theme:', error);
+    // Fallback to default theme
+    if (theme.id !== themes[0].id) {
+      applyTheme(themes[0]);
+    }
   }
-
-  // Create and inject new theme variables
-  const style = document.createElement('style');
-  style.id = 'theme-variables';
-  style.textContent = generateThemeVariables(theme);
-  document.head.appendChild(style);
-
-  // Store the current theme ID in localStorage
-  localStorage.setItem('selected-theme', theme.id);
-
-  // Dispatch theme change event
-  window.dispatchEvent(new CustomEvent('themechange', { detail: theme }));
 }
 
-let customThemes: Theme[] = [];
+// Theme registry for custom themes
+const themeRegistry = new Map<string, Theme>();
 
-export function setCustomThemes(themes: Theme[]) {
-  customThemes = themes;
+/**
+ * Registers custom themes
+ */
+export function registerCustomThemes(newThemes: Theme[]): void {
+  newThemes.forEach(theme => {
+    if (!theme.id || !theme.name) {
+      console.warn('Invalid theme:', theme);
+      return;
+    }
+    themeRegistry.set(theme.id, theme);
+  });
 }
 
 /**
- * Gets a theme by ID
+ * Gets a theme by ID with type safety
  */
 export function getThemeById(id: string): Theme | undefined {
   return themes.find(theme => theme.id === id) || 
-         customThemes.find(theme => theme.id === id);
+         themeRegistry.get(id);
 }
 
 /**
- * Gets the currently active theme
+ * Gets the currently active theme with fallback
  */
 export function getCurrentTheme(): Theme {
-  const storedThemeId = localStorage.getItem('selected-theme');
-  return getThemeById(storedThemeId || 'modern-light') || themes[0];
+  try {
+    const storedThemeId = localStorage.getItem('selected-theme');
+    return getThemeById(storedThemeId || 'modern-light') || themes[0];
+  } catch {
+    return themes[0];
+  }
 }
 
 /**
  * Checks if the system prefers dark mode
  */
 export function prefersDarkMode(): boolean {
-  return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  try {
+    return window.matchMedia('(prefers-color-scheme: dark)').matches;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -135,22 +196,47 @@ export function getSystemTheme(): Theme {
     getThemeById('modern-light') || themes[0];
 }
 
+// Media query for system theme changes
+let systemThemeQuery: MediaQueryList | null = null;
+
 /**
  * Initializes theme system and applies the appropriate theme
  */
 export function initializeTheme(): void {
-  const storedThemeId = localStorage.getItem('selected-theme');
-  const theme = storedThemeId ? 
-    getThemeById(storedThemeId) : 
-    getSystemTheme();
-  
-  applyTheme(theme || themes[0]);
+  try {
+    const storedThemeId = localStorage.getItem('selected-theme');
+    const theme = storedThemeId ? 
+      getThemeById(storedThemeId) : 
+      getSystemTheme();
+    
+    applyTheme(theme || themes[0]);
 
-  // Listen for system theme changes
-  window.matchMedia('(prefers-color-scheme: dark)')
-    .addEventListener('change', e => {
-      if (!localStorage.getItem('selected-theme')) {
-        applyTheme(getSystemTheme());
-      }
-    });
+    // Clean up existing listener
+    if (systemThemeQuery) {
+      systemThemeQuery.removeEventListener('change', handleSystemThemeChange);
+    }
+
+    // Listen for system theme changes
+    systemThemeQuery = window.matchMedia('(prefers-color-scheme: dark)');
+    systemThemeQuery.addEventListener('change', handleSystemThemeChange);
+  } catch (error) {
+    console.error('Failed to initialize theme:', error);
+    applyTheme(themes[0]);
+  }
+}
+
+function handleSystemThemeChange(e: MediaQueryListEvent): void {
+  if (!localStorage.getItem('selected-theme')) {
+    applyTheme(getSystemTheme());
+  }
+}
+
+// Clean up on module unload
+export function cleanup(): void {
+  if (systemThemeQuery) {
+    systemThemeQuery.removeEventListener('change', handleSystemThemeChange);
+    systemThemeQuery = null;
+  }
+  cssCache.clear();
+  clearTimeout(themeChangeTimeout);
 }

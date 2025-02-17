@@ -11,7 +11,7 @@ interface IntegrationsState {
   loading: boolean;
   error: string | null;
   fetchIntegrations: () => Promise<void>;
-  connectIntegration: (type: Integration['type']) => Promise<void>;
+  connectIntegration: (type: Integration['type'], config?: { name?: string; apiKey?: string }) => Promise<void>;
   disconnectIntegration: (type: Integration['type']) => Promise<void>;
   addCustomIntegration: (data: {
     name: string;
@@ -53,17 +53,52 @@ export const useIntegrationsStore = create<IntegrationsState>((set, get) => ({
     }
   },
 
-  connectIntegration: async (type) => {
-    switch (type) {
-      case 'gmail':
-        return get().connectGmail();
-      case 'google_calendar':
-        return get().connectCalendar();
-      case 'outlook':
-        return get().connectOutlook();
-      default:
-        throw new Error(`Unsupported integration type: ${type}`);
+  connectIntegration: async (type, config) => {
+    // Handle OAuth-based integrations
+    if (['gmail', 'google_calendar', 'outlook'].includes(type)) {
+      switch (type) {
+        case 'gmail':
+          return get().connectGmail();
+        case 'google_calendar':
+          return get().connectCalendar();
+        case 'outlook':
+          return get().connectOutlook();
+      }
     }
+
+    // Handle API key-based integrations
+    if (config?.apiKey) {
+      set({ loading: true, error: null });
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) throw new Error('User not authenticated');
+
+        const { error } = await supabase
+          .from('integrations')
+          .upsert({
+            user_id: user.id,
+            type,
+            status: 'connected',
+            settings: {
+              name: config.name || 'UltraChat',
+              api_key: config.apiKey
+            },
+            last_synced: new Date().toISOString()
+          })
+          .select()
+          .single();
+
+        if (error) throw error;
+        await get().fetchIntegrations();
+      } catch (error) {
+        set({ error: error instanceof Error ? error.message : 'An error occurred' });
+      } finally {
+        set({ loading: false });
+      }
+      return;
+    }
+
+    throw new Error(`Invalid integration configuration for type: ${type}`);
   },
 
   disconnectIntegration: async (type) => {
@@ -334,5 +369,4 @@ export const useIntegrationsStore = create<IntegrationsState>((set, get) => ({
 
     return new CalendarExecutor(integration.credentials);
   },
-
 }));

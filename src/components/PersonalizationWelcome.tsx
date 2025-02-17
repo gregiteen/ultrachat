@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { UserCog } from 'lucide-react';
+import { UserCog, AlertCircle } from 'lucide-react';
 import { usePersonalizationStore } from '../store/personalization';
 
 interface PersonalizationWelcomeProps {
@@ -11,19 +11,16 @@ interface PersonalizationWelcomeProps {
 export function PersonalizationWelcome({ onClose, onSetup }: PersonalizationWelcomeProps) {
   const navigate = useNavigate();
   const [isClosing, setIsClosing] = useState(false);
-  const { personalInfo } = usePersonalizationStore();
+  const { hasSeenWelcome, loading, initialized } = usePersonalizationStore();
 
   const handleSetup = async () => {
-    // Call onClose to update state and close modal
     onClose();
   };
 
   const handleMaybeLater = async () => {
     try {
-      if (isClosing) return; // Prevent multiple clicks
+      if (isClosing) return;
       setIsClosing(true);
-      
-      // Call onClose to update state and close modal
       await onClose();
     } catch (error) {
       console.error('Error in maybe later:', error);
@@ -32,7 +29,6 @@ export function PersonalizationWelcome({ onClose, onSetup }: PersonalizationWelc
   };
 
   const handleBackdropClick = (e: React.MouseEvent) => {
-    // Only close if clicking the backdrop itself, not its children
     if (e.target === e.currentTarget) {
       onClose();
     }
@@ -42,23 +38,8 @@ export function PersonalizationWelcome({ onClose, onSetup }: PersonalizationWelc
     return () => setIsClosing(false);
   }, []);
 
-  // Don't show the welcome popup if there's already personalization info
-  const hasPersonalInfo = () => {
-    // Check basic fields
-    if (personalInfo.name || personalInfo.email || personalInfo.phone) return true;
-    // Check arrays
-    if (personalInfo.interests && personalInfo.interests.length > 0) return true;
-    if (personalInfo.expertise && personalInfo.expertise.length > 0) return true;
-    if (personalInfo.hobbies && personalInfo.hobbies.length > 0) return true;
-    // Check nested objects
-    if (personalInfo.address?.street || personalInfo.address?.city) return true;
-    if (personalInfo.clothing_sizes?.top || personalInfo.clothing_sizes?.bottom) return true;
-    // Check other significant fields
-    if (personalInfo.backstory || personalInfo.projects || personalInfo.resume) return true;
-    return false;
-  };
-
-  if (hasPersonalInfo()) {
+  // Only show for new users who haven't seen welcome
+  if (loading || !initialized || hasSeenWelcome) {
     return null;
   }
 
@@ -74,28 +55,34 @@ export function PersonalizationWelcome({ onClose, onSetup }: PersonalizationWelc
               <UserCog className="h-8 w-8 text-primary" />
             </div>
             <h2 className="text-2xl font-bold text-foreground">
-              Welcome to Personalization
+              Set Up Personalization
             </h2>
           </div>
 
           <div className="space-y-4 text-muted-foreground">
             <p>
               Personalization helps Ultra understand you better and provide more relevant,
-              contextual responses. When enabled, Ultra can:
+              contextual responses. To get started:
             </p>
 
+            <ol className="space-y-4 list-decimal pl-6">
+              <li>
+                <strong className="text-foreground">Step 1: Set Up Your Profile</strong>
+                <p className="mt-1">Fill out your preferences and information in the account settings.</p>
+              </li>
+              <li>
+                <strong className="text-foreground">Step 2: Enable Personalization</strong>
+                <p className="mt-1">Click the "P" button in the chat to toggle personalization on.</p>
+              </li>
+            </ol>
+
+            <p>When personalization is active, Ultra can:</p>
             <ul className="space-y-2 list-disc pl-6">
               <li>Use your preferences to tailor recommendations</li>
               <li>Reference your background in relevant discussions</li>
               <li>Consider your goals and interests in suggestions</li>
               <li>Maintain context across conversations</li>
             </ul>
-
-            <p>
-              Your personal information is securely stored and only used to enhance your
-              interactions. You can toggle personalization on/off at any time, and manage
-              your information in account settings.
-            </p>
 
             <div className="bg-muted/30 p-4 rounded-lg">
               <p className="text-sm">
@@ -119,7 +106,7 @@ export function PersonalizationWelcome({ onClose, onSetup }: PersonalizationWelc
               className="px-4 py-2 text-sm font-medium text-button-text bg-primary rounded-md hover:bg-secondary"
               disabled={isClosing}
             >
-              Set Up Personalization
+              Set Up Profile
             </button>
           </div>
         </div>

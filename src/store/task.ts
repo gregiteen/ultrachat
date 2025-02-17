@@ -2,14 +2,18 @@ import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
 import type { Task } from '../types';
 import { TaskExecutor } from '../lib/agents/executors/task';
+import { TaskOrchestrator } from '../lib/agents/orchestrator';
 import { createTaskChain } from '../lib/agents/chains/task';
 import { useGeminiStore } from './gemini';
+import { CalendarExecutor } from '../lib/agents/executors/calendar';
+import { GmailExecutor } from '../lib/agents/executors/gmail';
 
 interface TaskState {
   tasks: Task[];
   loading: boolean;
   error: string | null;
   fetchTasks: () => Promise<void>;
+  listTasks: () => Promise<Task[]>;
   createTask: (task: Partial<Task>) => Promise<void>;
   updateTask: (id: string, updates: Partial<Task>) => Promise<void>;
   deleteTask: (id: string) => Promise<void>;
@@ -44,14 +48,27 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       const message = error instanceof Error ? error.message : 'Failed to fetch tasks';
       console.error('Error fetching tasks:', error);
       set({ error: message });
-      // Reset tasks array if there's an error to prevent stale data
       if (get().tasks.length > 0) {
         set({ tasks: [] });
       }
-      throw error; // Re-throw to handle in component
+      throw error;
     } finally {
       set({ loading: false });
     }
+  },
+
+  listTasks: async () => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error('User not authenticated');
+
+    const { data, error } = await supabase
+      .from('tasks')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+    return data || [];
   },
 
   createTask: async (task: Partial<Task>) => {
@@ -73,11 +90,29 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
       if (error) throw error;
       set((state) => ({ tasks: [data, ...state.tasks] }));
+
+      // Initialize executors
+      const taskExecutor = new TaskExecutor();
+      const calendarExecutor = new CalendarExecutor({ access_token: '', expires_at: 0 }); // TODO: Get from auth
+      const gmailExecutor = new GmailExecutor({ access_token: '', expires_at: 0 }); // TODO: Get from auth
+      
+      // Initialize orchestrator
+      const orchestrator = new TaskOrchestrator(
+        taskExecutor,
+        calendarExecutor,
+        gmailExecutor
+      );
+
+      // Schedule task and set up automation if needed
+      await orchestrator.scheduleTask(data);
+      if (task.automation_rules) {
+        await orchestrator.setupAutomation(data, task.automation_rules);
+      }
+
     } catch (error: any) {
       const message = error instanceof Error ? error.message : 'Failed to create task';
       console.error('Error creating task:', error);
       set({ error: message });
-      // Reset loading state immediately on error
       set({ loading: false });
       throw error;
     } finally {
@@ -107,7 +142,6 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       const message = error instanceof Error ? error.message : 'Failed to update task';
       console.error('Error updating task:', error);
       set({ error: message });
-      // Reset loading state immediately on error
       set({ loading: false });
       throw error;
     } finally {
@@ -135,7 +169,6 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       const message = error instanceof Error ? error.message : 'Failed to delete task';
       console.error('Error deleting task:', error);
       set({ error: message });
-      // Reset loading state immediately on error
       set({ loading: false });
       throw error;
     } finally {
@@ -168,11 +201,14 @@ export const useTaskStore = create<TaskState>((set, get) => ({
   },
 
   processTaskRequest: async (request: string) => {
-    const executor = new TaskExecutor();
+    const taskExecutor = new TaskExecutor();
+    const calendarExecutor = new CalendarExecutor({ access_token: '', expires_at: 0 }); // TODO: Get from auth
+    const gmailExecutor = new GmailExecutor({ access_token: '', expires_at: 0 }); // TODO: Get from auth
     const model = useGeminiStore.getState().model;
+    
     if (!model) throw new Error('Gemini model not initialized');
 
-    const chain = createTaskChain(model, executor);
+    const chain = createTaskChain(model, taskExecutor, calendarExecutor, gmailExecutor);
     const result = await chain.invoke({ input: request });
 
     if (result.error) {

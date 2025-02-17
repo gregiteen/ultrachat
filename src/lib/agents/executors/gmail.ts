@@ -10,7 +10,7 @@ export interface GmailMessage {
   labels: string[];
 }
 
-interface GmailCredentials {
+export interface GmailCredentials {
   access_token: string;
   expires_at: number;
 }

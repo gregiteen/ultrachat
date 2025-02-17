@@ -143,6 +143,36 @@ interface InputProps {
 }
 ```
 
+4. **ColorPicker**
+```typescript
+interface ColorPickerProps {
+  value: string;
+  onChange: (color: string) => void;
+  label?: string;
+}
+
+// Features:
+// - Interactive color wheel for intuitive selection
+// - Visual harmony colors display
+// - Simple lightness control
+// - Organized preset colors
+// - Touch support
+// - High-DPI display support
+
+// Usage:
+<ColorPicker
+  value="#3B82F6"
+  onChange={handleColorChange}
+  label="Theme Color"
+/>
+
+// Best Practices:
+// 1. Use for theme customization
+// 2. Provide clear labels
+// 3. Handle color validation
+// 4. Support keyboard input for hex values
+```
+
 3. **Card**
 ```typescript
 interface CardProps {

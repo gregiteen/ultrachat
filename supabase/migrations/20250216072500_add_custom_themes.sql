@@ -1,3 +1,12 @@
+-- Create set_updated_at function if it doesn't exist
+CREATE OR REPLACE FUNCTION public.set_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = timezone('utc'::text, now());
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
 -- Create custom themes table
 CREATE TABLE custom_themes (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

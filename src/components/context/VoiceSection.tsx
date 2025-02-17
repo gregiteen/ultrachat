@@ -1,27 +1,23 @@
 import React, { useState, useEffect } from 'react';
-import { Mic, Volume2, RefreshCw } from 'lucide-react';
-import { elevenlabs } from '../../lib/elevenlabs';
-import type { Voice, VoiceSettings } from '../../lib/elevenlabs';
+import { Mic, Volume2, RefreshCw, Plus, Wand2 } from 'lucide-react';
+import { elevenlabs, type Voice as ElevenLabsVoice } from '../../lib/elevenlabs';
+import { VoiceCloner } from '../voice/VoiceCloner';
+import { VoiceDesigner } from '../voice/VoiceDesigner';
+import { VoiceGallery } from '../voice/VoiceGallery';
+import type { Voice, VoiceSettings } from '../../types';
 
 interface VoiceSectionProps {
-  voice: {
-    id?: string;
-    name: string;
-    description?: string;
-    settings?: VoiceSettings;
-  };
-  setVoice: (voice: {
-    id?: string;
-    name: string;
-    description?: string;
-    settings?: VoiceSettings;
-  }) => void;
+  voice: Voice;
+  setVoice: (voice: Voice) => void;
 }
 
 export function VoiceSection({ voice, setVoice }: VoiceSectionProps) {
-  const [availableVoices, setAvailableVoices] = useState<Voice[]>([]);
+  const [availableVoices, setAvailableVoices] = useState<ElevenLabsVoice[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showVoiceGallery, setShowVoiceGallery] = useState(false);
+  const [showVoiceCloner, setShowVoiceCloner] = useState(false);
+  const [showVoiceDesigner, setShowVoiceDesigner] = useState(false);
 
   // Default settings if none provided
   const settings = voice.settings || {
@@ -55,9 +51,11 @@ export function VoiceSection({ voice, setVoice }: VoiceSectionProps) {
         voice_id: voiceId,
         voice_settings: voice.settings
       });
-      const audioUrl = URL.createObjectURL(audioBlob);
-      const audio = new Audio(audioUrl);
-      audio.play();
+      if (audioBlob instanceof Blob) {
+        const audioUrl = URL.createObjectURL(audioBlob);
+        const audio = new Audio(audioUrl);
+        audio.play();
+      }
     } catch (err) {
       console.error('Error playing voice preview:', err);
     }
@@ -68,10 +66,10 @@ export function VoiceSection({ voice, setVoice }: VoiceSectionProps) {
     const selectedVoice = availableVoices.find(v => v.id === e.target.value);
     if (selectedVoice) {
       setVoice({
-        ...voice,
         id: selectedVoice.id,
         name: selectedVoice.name,
-        description: selectedVoice.description
+        description: selectedVoice.description,
+        settings: settings
       });
     }
   };
@@ -86,12 +84,62 @@ export function VoiceSection({ voice, setVoice }: VoiceSectionProps) {
     });
   };
 
+  const handleVoiceCreated = (newVoice: ElevenLabsVoice) => {
+    setVoice({
+      id: newVoice.id,
+      name: newVoice.name,
+      description: newVoice.description,
+      settings: settings
+    });
+    setShowVoiceCloner(false);
+    setShowVoiceDesigner(false);
+    fetchVoices();
+  };
+
+  const handleVoiceSelect = (selectedVoice: ElevenLabsVoice) => {
+    setVoice({
+      id: selectedVoice.id,
+      name: selectedVoice.name,
+      description: selectedVoice.description,
+      settings: settings
+    });
+    setShowVoiceGallery(false);
+  };
+
   return (
     <div className="space-y-4">
       <div>
-        <label className="block text-sm font-medium text-foreground mb-1">
-          Voice Selection
-        </label>
+        <div className="flex items-center justify-between mb-2">
+          <label className="block text-sm font-medium text-foreground">
+            Voice Selection
+          </label>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setShowVoiceCloner(true)}
+              className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-primary hover:text-secondary transition-colors"
+            >
+              <Plus className="h-3 w-3" />
+              Clone Voice
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowVoiceDesigner(true)}
+              className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-primary hover:text-secondary transition-colors"
+            >
+              <Wand2 className="h-3 w-3" />
+              Design Voice
+            </button>
+            <button
+              type="button"
+              onClick={() => setShowVoiceGallery(true)}
+              className="flex items-center gap-1 px-2 py-1 text-xs font-medium text-primary hover:text-secondary transition-colors"
+            >
+              Browse All
+            </button>
+          </div>
+        </div>
+
         <div className="flex gap-2">
           <select            
             value={voice.id || ''}
@@ -186,6 +234,34 @@ export function VoiceSection({ voice, setVoice }: VoiceSectionProps) {
         <p className="text-sm text-red-500 mt-2">
           {error}
         </p>
+      )}
+
+      {/* Voice Gallery Modal */}
+      {showVoiceGallery && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-background rounded-lg w-full max-w-4xl max-h-[90vh] overflow-y-auto">
+            <VoiceGallery
+              onVoiceSelect={handleVoiceSelect}
+              onClose={() => setShowVoiceGallery(false)}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Voice Cloner Modal */}
+      {showVoiceCloner && (
+        <VoiceCloner
+          onVoiceCreated={handleVoiceCreated}
+          onClose={() => setShowVoiceCloner(false)}
+        />
+      )}
+
+      {/* Voice Designer Modal */}
+      {showVoiceDesigner && (
+        <VoiceDesigner
+          onVoiceCreated={handleVoiceCreated}
+          onClose={() => setShowVoiceDesigner(false)}
+        />
       )}
     </div>
   );

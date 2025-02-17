@@ -1,5 +1,3 @@
 export * from './Spinner';
-
-// TODO: Export other feedback components as they are implemented:
-// export * from './Toast';
-// export * from './Progress';
+export * from './Progress/Progress';
+export * from './Toast/ToastProvider';

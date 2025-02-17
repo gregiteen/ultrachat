@@ -25,6 +25,10 @@ interface PersonalizationContext {
   };
 }
 
+interface SendMessageOptions {
+  onStreamResponse?: (response: string) => void;
+}
+
 class Chat {
   private history: ChatMessage[] = [];
   private context: PersonalizationContext | null = null;
@@ -76,7 +80,7 @@ When providing code or technical information:
     return prompt;
   }
 
-  async sendMessage(content: string): Promise<{ response: { text: () => string } }> {
+  async sendMessage(content: string, options?: SendMessageOptions): Promise<{ response: { text: () => string } }> {
     // Add user message to history
     const userMessage: ChatMessage = { role: 'user', content };
     this.history.push(userMessage);
@@ -124,14 +128,34 @@ When providing code or technical information:
         throw new Error(`API request failed: ${response.status} ${response.statusText} - ${errorText}`);
       }
 
-      const data: GeminiResponse = await response.json();
-      const responseText = data.candidates[0].content.parts[0].text;
-      console.log('Gemini response:', responseText);
+      const data = await response.json() as GeminiResponse;
       
-      // Add AI response to history if unique
-      if (!this.history.find(m => m.content === responseText)) {
-        this.history.push({ role: 'model' as const, content: responseText });
+      if (!data.candidates?.[0]?.content?.parts?.[0]?.text) {
+        throw new Error('Invalid response format from Gemini API');
       }
+
+      let responseText = '';
+      const streamResponse = (text: string) => {
+        responseText = text;
+        if (options?.onStreamResponse) {
+          options.onStreamResponse(responseText);
+        }
+      };
+
+      // Simulate streaming by splitting response into chunks
+      const fullResponse = data.candidates[0].content.parts[0].text.trim();
+      const words = fullResponse.split(' ');
+      const chunkSize = 3; // Number of words per chunk
+
+      for (let i = 0; i < words.length; i += chunkSize) {
+        const chunk = words.slice(i, i + chunkSize).join(' ');
+        streamResponse(words.slice(0, i + chunkSize).join(' '));
+        // Small delay between chunks to simulate streaming
+        await new Promise(resolve => setTimeout(resolve, 50));
+      }
+
+      // Add AI response to history
+      this.history.push({ role: 'model', content: responseText });
 
       return {
         response: {
@@ -140,7 +164,11 @@ When providing code or technical information:
       };
     } catch (error) {
       console.error('Gemini API error:', error);
-      throw error;
+      if (error instanceof Error) {
+        throw new Error(`Failed to get response: ${error.message}`);
+      } else {
+        throw new Error('Failed to get response from Gemini API. Please try again.');
+      }
     }
   }
 }
@@ -168,10 +196,45 @@ class GeminiAPI {
   async generateStructuredResponse(prompt: string): Promise<any> {
     const response = await this.generateText(prompt);
     try {
-      return JSON.parse(response);
+      // Clean up the response to handle markdown code blocks
+      let cleanResponse = response;
+      
+      // Remove markdown code block markers if present
+      if (response.includes('```json')) {
+        cleanResponse = response
+          .replace(/```json\n?/, '')
+          .replace(/```(\n)?$/, '')
+          .trim();
+      }
+      
+      // Parse and validate the response
+      const parsed = JSON.parse(cleanResponse);
+      
+      return parsed;
     } catch (error) {
       console.error('Error parsing structured response:', error);
       throw new Error('Failed to parse structured response from Gemini');
+    }
+  }
+
+  async generatePersonalizationResponse(prompt: string): Promise<any> {
+    const chat = new Chat(this.apiKey);
+    const result = await chat.sendMessage(prompt);
+    const response = result.response.text();
+
+    try {
+      // Clean up the response to handle markdown code blocks
+      let cleanResponse = response;
+      
+      // Remove markdown code blocks if present
+      if (response.includes('```json')) {
+        cleanResponse = response.replace(/```json\n?/, '').replace(/```(\n)?$/, '').trim();
+      }
+      
+      return JSON.parse(cleanResponse);
+    } catch (error) {
+      console.error('Error parsing personalization response:', error, '\nRaw response:', response);
+      throw new Error('Failed to parse personalization response from Gemini');
     }
   }
 }

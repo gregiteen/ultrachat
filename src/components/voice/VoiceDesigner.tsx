@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { elevenlabs, type Voice, type VoiceDesign, type VoiceSettings } from '../../lib/elevenlabs';
+import { Spinner } from '../../design-system/components/feedback/Spinner';
 
 interface VoiceDesignerProps {
   onVoiceCreated?: (voice: Voice) => void;
@@ -25,6 +26,7 @@ export function VoiceDesigner({ onVoiceCreated, onClose }: VoiceDesignerProps) {
   });
   const [previewText, setPreviewText] = useState('Hello! This is a preview of how I will sound.');
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isLoadingAudio, setIsLoadingAudio] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
 
@@ -37,17 +39,47 @@ export function VoiceDesigner({ onVoiceCreated, onClose }: VoiceDesignerProps) {
     };
   }, [audioUrl]);
 
-  const handleDesignChange = (field: keyof VoiceDesign, value: any) => {
+  const validateDesignValue = (field: keyof VoiceDesign, value: unknown): boolean => {
+    switch (field) {
+      case 'age':
+        return typeof value === 'number' && value >= 1 && value <= 100;
+      case 'gender':
+        return value === 'male' || value === 'female' || value === 'neutral';
+      case 'accent':
+        return typeof value === 'string' && value.length <= 50;
+      case 'accent_strength':
+      case 'tempo':
+      case 'pitch':
+        return typeof value === 'number' && value >= 0 && value <= 2;
+      default:
+        return true;
+    }
+  };
+
+  const handleDesignChange = (field: keyof VoiceDesign, value: unknown) => {
+    if (!validateDesignValue(field, value)) {
+      setError(`Invalid value for ${field}`);
+      return;
+    }
+    setError(null);
     setDesign(prev => ({
       ...prev,
       [field]: value
     }));
   };
 
-  const handleSettingsChange = (field: keyof VoiceSettings, value: any) => {
+  const validateSettingsValue = (field: keyof VoiceSettings, value: unknown): boolean => {
+    if (field === 'optimize_streaming_latency') {
+      return typeof value === 'number' && value >= 0 && value <= 4;
+    }
+    return typeof value === 'number' && value >= 0 && value <= 1;
+  };
+
+  const handleSettingsChange = (field: keyof VoiceSettings, value: unknown) => {
+    if (!validateSettingsValue(field, value)) return;
     setSettings(prev => ({
       ...prev,
-      [field]: value
+      [field]: value as number
     }));
   };
 
@@ -55,6 +87,11 @@ export function VoiceDesigner({ onVoiceCreated, onClose }: VoiceDesignerProps) {
     try {
       setIsGenerating(true);
       setError(null);
+
+      if (!name.trim() || !previewText.trim()) {
+        setError('Name and preview text are required');
+        return;
+      }
       
       // First generate the voice
       const voice = await elevenlabs.generateVoice({
@@ -63,26 +100,37 @@ export function VoiceDesigner({ onVoiceCreated, onClose }: VoiceDesignerProps) {
         design,
       });
 
+      if (!voice?.id) {
+        throw new Error('Failed to generate voice');
+      }
+
       // Then generate a preview using the new voice
+      setIsLoadingAudio(true);
       const audioBlob = await elevenlabs.textToSpeech({
         text: previewText,
         voice_id: voice.id,
         voice_settings: settings,
       }) as Blob;
 
-      // Create URL for audio preview
+      // Clean up old audio URL
       if (audioUrl) {
         URL.revokeObjectURL(audioUrl);
       }
+
+      // Create new audio URL
       const url = URL.createObjectURL(audioBlob);
       setAudioUrl(url);
 
-      // Notify parent of new voice
-      onVoiceCreated?.(voice);
+      // Only notify parent if we successfully generated both voice and audio
+      if (voice && audioBlob) {
+        onVoiceCreated?.(voice);
+      }
+
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to generate voice preview');
     } finally {
       setIsGenerating(false);
+      setIsLoadingAudio(false);
     }
   };
 
@@ -269,7 +317,7 @@ export function VoiceDesigner({ onVoiceCreated, onClose }: VoiceDesignerProps) {
             <div className="text-red-500 text-sm">{error}</div>
           )}
 
-          {audioUrl && (
+          {isLoadingAudio ? <Spinner className="w-8 h-8" /> : audioUrl && (
             <audio controls className="w-full">
               <source src={audioUrl} type="audio/mpeg" />
               Your browser does not support the audio element.

@@ -1,6 +1,8 @@
-import React from 'react';
+import React, { useState, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { MessageSquare, Zap, Shield, Globe, Inbox, CheckSquare } from 'lucide-react';
+import { MessageSquare, Zap, Shield, Globe, Inbox, CheckSquare, Search, Settings, User, LogIn } from 'lucide-react';
+import { useAuthStore } from '../store/auth';
+import { AuthDialog } from '../components/AuthDialog';
 
 const features = [
   {
@@ -36,18 +38,72 @@ const features = [
 ];
 
 export default function Landing() {
+  const { user } = useAuthStore();
+  const [showAuthDialog, setShowAuthDialog] = useState(false);
+  const authButtonRef = useRef<HTMLButtonElement>(null);
+
+  const navItems = [
+    { to: '/chat', icon: <MessageSquare className="h-5 w-5" />, label: 'Chat' },
+    { to: '/browse', icon: <Globe className="h-5 w-5" />, label: 'Browse' },
+    { to: '/inbox', icon: <Inbox className="h-5 w-5" />, label: 'Inbox' },
+    { to: '/tasks', icon: <CheckSquare className="h-5 w-5" />, label: 'Tasks' },
+  ];
+
   return (
     <div className="bg-background">
       {/* Hero Section */}
       <div className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-sm border-b border-muted">
         <div className="mx-auto max-w-7xl px-6 py-4 flex justify-between items-center">
-          <img src="https://imgur.com/EJ0T2co.png" alt="UltraChat" className="h-8 w-auto" />
-          <Link
-            to="/auth"
-            className="rounded-md bg-primary px-3 py-2 text-sm font-semibold text-button-text shadow-sm hover:bg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary transition-colors"
-          >
-            Login
+          <Link to="/">
+            <img src="https://imgur.com/EJ0T2co.png" alt="UltraChat" className="h-8 w-auto" />
           </Link>
+          
+          {/* Navigation Items */}
+          {user ? (
+            <div className="flex items-center gap-4">
+              {navItems.map((item) => (
+                <Link
+                  key={item.to}
+                  to={item.to}
+                  className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-foreground hover:text-primary transition-colors"
+                >
+                  {item.icon}
+                  <span className="hidden sm:inline">{item.label}</span>
+                </Link>
+              ))}
+              <div className="h-6 w-px bg-muted" />
+              <Link
+                to="/account"
+                className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-foreground hover:text-primary transition-colors"
+              >
+                <User className="h-5 w-5" />
+                <span className="hidden sm:inline">Account</span>
+              </Link>
+            </div>
+          ) : (
+            <div className="flex items-center gap-4">
+              <Link
+                to="#features"
+                className="text-sm font-medium text-foreground hover:text-primary transition-colors"
+              >
+                Features
+              </Link>
+              <Link
+                to="#pricing"
+                className="text-sm font-medium text-foreground hover:text-primary transition-colors"
+              >
+                Pricing
+              </Link>
+              <button
+                ref={authButtonRef}
+                onClick={() => setShowAuthDialog(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-primary text-button-text rounded-lg hover:bg-secondary transition-colors"
+              >
+                <LogIn className="h-5 w-5" />
+                <span>Sign in</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
       
@@ -57,6 +113,9 @@ export default function Landing() {
       <div className="relative isolate overflow-hidden">
         <div className="mx-auto max-w-7xl px-6 pb-24 pt-10 sm:pb-32 lg:flex lg:px-8 lg:py-40">
           <div className="mx-auto max-w-2xl flex-shrink-0 lg:mx-0 lg:max-w-xl lg:pt-8">
+            <div className="flex justify-center lg:justify-start">
+              <img src="https://imgur.com/EJ0T2co.png" alt="UltraChat" className="h-24 w-auto mb-8" />
+            </div>
             <div className="mt-24 sm:mt-32 lg:mt-16">
               <a href="#" className="inline-flex space-x-6">
                 <span className="rounded-full bg-primary/10 px-3 py-1 text-sm font-semibold leading-6 text-primary ring-1 ring-inset ring-primary/10">
@@ -75,18 +134,27 @@ export default function Landing() {
               Experience the future of communication with UltraChat. Intelligent conversations, seamless integrations, and powerful task management - all in one place.
             </p>
             <div className="mt-10 flex items-center gap-x-6">
-              <Link
-                to="/auth"
-                className="rounded-md bg-primary px-3.5 py-2.5 text-sm font-semibold text-button-text shadow-sm hover:bg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-              >
-                Get started
-              </Link>
+              {user ? (
+                <Link
+                  to="/chat"
+                  className="rounded-md bg-primary px-3.5 py-2.5 text-sm font-semibold text-button-text shadow-sm hover:bg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                >
+                  Go to Chat
+                </Link>
+              ) : (
+                <button
+                  onClick={() => setShowAuthDialog(true)}
+                  className="rounded-md bg-primary px-3.5 py-2.5 text-sm font-semibold text-button-text shadow-sm hover:bg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                >
+                  Get started
+                </button>
+              )}
               <a href="#features" className="text-sm font-semibold leading-6 text-foreground">
                 Learn more <span aria-hidden="true">→</span>
               </a>
             </div>
           </div>
-          <div className="mx-auto mt-16 flex max-w-2xl sm:mt-24 lg:ml-10 lg:mr-0 lg:mt-0 lg:max-w-none lg:flex-none xl:ml-32">
+          <div className="mx-auto mt-16 flex max-w-2xl sm:mt-24 lg:ml-10 lg:mr-0 lg:mt-0 lg:max-w-none xl:ml-32">
             <div className="max-w-3xl flex-none sm:max-w-5xl lg:max-w-none">
               <img
                 src="https://images.unsplash.com/photo-1498050108023-c5249f4df085?ixlib=rb-4.0.3&ixid=MnwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8&auto=format&fit=crop&w=2072&q=80"
@@ -140,18 +208,34 @@ export default function Landing() {
             Join thousands of users who are already experiencing the future of communication.
           </p>
           <div className="mt-10 flex items-center justify-center gap-x-6">
-            <Link
-              to="/auth"
-              className="rounded-md bg-button-text px-3.5 py-2.5 text-sm font-semibold text-primary shadow-sm hover:bg-button-text/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
-            >
-              Get started
-            </Link>
+            {user ? (
+              <Link
+                to="/chat"
+                className="rounded-md bg-button-text px-3.5 py-2.5 text-sm font-semibold text-primary shadow-sm hover:bg-button-text/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+              >
+                Go to Chat
+              </Link>
+            ) : (
+              <button
+                onClick={() => setShowAuthDialog(true)}
+                className="rounded-md bg-button-text px-3.5 py-2.5 text-sm font-semibold text-primary shadow-sm hover:bg-button-text/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
+              >
+                Get started
+              </button>
+            )}
             <a href="#features" className="text-sm font-semibold leading-6 text-button-text">
               Learn more <span aria-hidden="true">→</span>
             </a>
           </div>
         </div>
       </div>
+
+      {/* Auth Dialog */}
+      <AuthDialog 
+        isOpen={showAuthDialog} 
+        onClose={() => setShowAuthDialog(false)}
+        anchorRef={authButtonRef}
+      />
     </div>
   );
 }
