@@ -17,7 +17,7 @@ import AppLayout from './components/AppLayout';
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, initialized, loading } = useAuthStore();
 
-  if (!initialized || loading) {
+  if (!initialized) {
     return (
       <div className="flex items-center justify-center h-screen">
         <div className="animate-pulse text-lg text-muted-foreground">
@@ -27,8 +27,18 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
     );
   }
 
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="animate-pulse text-lg text-muted-foreground">
+          Initializing...
+        </div>
+      </div>
+    );
+  }
+
   if (!user) {
-    return <Navigate to="/auth" replace />;
+    return <Navigate to="/" replace />;
   }
 
   return <>{children}</>;
@@ -37,11 +47,21 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
 function PublicRoute({ children }: { children: React.ReactNode }) {
   const { user, initialized, loading } = useAuthStore();
 
-  if (!initialized || loading) {
+  if (!initialized) {
     return (
       <div className="flex items-center justify-center h-screen">
         <div className="animate-pulse text-lg text-muted-foreground">
           Loading...
+        </div>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="animate-pulse text-lg text-muted-foreground">
+          Initializing...
         </div>
       </div>
     );
@@ -55,11 +75,6 @@ function PublicRoute({ children }: { children: React.ReactNode }) {
 }
 
 function App() {
-  const { init } = useAuthStore();
-
-  useEffect(() => {
-    init().catch(console.error);
-  }, [init]);
 
   return (
     <ThemeProvider>
@@ -67,7 +82,14 @@ function App() {
         <AuthProvider>
           <div className="min-h-screen bg-background text-foreground">
             <Routes>
-              <Route path="/" element={<Landing />} />
+              <Route 
+                path="/" 
+                element={
+                  <PublicRoute>
+                    <Landing />
+                  </PublicRoute>
+                } 
+              />
               <Route 
                 path="/auth" 
                 element={
@@ -76,6 +98,7 @@ function App() {
                   </PublicRoute>
                 } 
               />
+              {/* Private Routes */}
               <Route
                 path="/chat"
                 element={

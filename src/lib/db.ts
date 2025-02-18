@@ -4,6 +4,7 @@ export class QueryBuilder<T = any> {
   private query: any;
 
   constructor(private client: SupabaseClient, private table: string) {
+    // Use table name directly - PostgREST will handle schema mapping
     this.query = client.from(table);
   }
 
@@ -107,30 +108,28 @@ export class QueryBuilder<T = any> {
     count?: number | null;
   }> {
     try {
+      // Log query details
+      console.log('Query details:', {
+        table: this.table,
+        url: this.query.url?.toString(),
+        method: this.query.method,
+        headers: this.query.headers
+      });
+
       const result = await this.query;
       
       // Handle common error cases
       if (result.error) {
         const pgError = result.error as PostgrestError;
-        
-        // Table not found or not ready
-        if (pgError.code === '42P01' || pgError.code === '404') {
-          const error = {
-            ...pgError,
-            message: `Table "${this.table}" not found`,
-            code: pgError.code
-          } as PostgrestError;
-          return { data: null, error, count: 0 };
-        }
 
-        // Invalid query parameters
-        if (pgError.code === '400') {
-          console.error('Invalid query parameters:', pgError.message);
-          return {
-            data: null,
-            error: { ...pgError, code: '400' } as PostgrestError
-          };
-        }
+        // Handle invalid query
+        console.error('Query error:', {
+          code: pgError.code,
+          message: pgError.message,
+          details: pgError.details,
+          hint: pgError.hint,
+          query: this.query.url?.toString()
+        }, 'Full result:', result);
 
         // Other database errors
         return {
@@ -142,9 +141,18 @@ export class QueryBuilder<T = any> {
       // Ensure data is properly typed
       const data = result.data;
       if (Array.isArray(data)) {
-        // Filter out any null values from array
+        // Filter out any invalid values from array
         return {
           data: data.filter((item): item is T => item !== null && typeof item === 'object'),
+          error: null,
+          count: result.count
+        };
+      }
+
+      // Handle null data
+      if (data === null) {
+        return {
+          data: [] as T[],
           error: null
         };
       }
@@ -152,7 +160,8 @@ export class QueryBuilder<T = any> {
       // Handle single item result
       return {
         data: data as T,
-        error: null
+        error: null,
+        count: result.count
       };
 
     } catch (error) {
@@ -175,4 +184,59 @@ export class QueryBuilder<T = any> {
 // Helper function to create a new query builder
 export function createQuery<T>(client: SupabaseClient, table: string): QueryBuilder<T> {
   return new QueryBuilder<T>(client, table);
+}
+
+// Helper function to call RPC functions
+export async function callRpc<T = any>(
+  client: SupabaseClient,
+  functionName: string,
+  params?: Record<string, any>
+): Promise<{
+  data: T | null;
+  error: PostgrestError | null;
+}> {
+  try {
+    // Call RPC function directly - PostgREST will handle schema mapping
+    const result = await client.rpc(functionName, params);
+
+    if (result.error) {
+      const pgError = result.error as PostgrestError;
+      
+      // Function not found
+      if (pgError.code === '404' || pgError.code === 'PGRST202' || pgError.code === '42883') {
+        console.error(`Function "${functionName}" not found:`, pgError);
+        return {
+          data: null,
+          error: {
+            ...pgError,
+            message: `Function "${functionName}" not found`,
+            code: pgError.code
+          } as PostgrestError
+        };
+      }
+
+      // Other errors
+      return {
+        data: null,
+        error: pgError
+      };
+    }
+
+    return {
+      data: result.data as T,
+      error: null
+    };
+  } catch (error) {
+    console.error(`Error calling RPC function "${functionName}":`, error);
+    return {
+      data: null,
+      error: {
+        message: error instanceof Error ? error.message : 'Unknown RPC error',
+        details: '',
+        hint: '',
+        code: 'UNKNOWN',
+        name: 'UnknownError',
+      } as PostgrestError
+    };
+  }
 }

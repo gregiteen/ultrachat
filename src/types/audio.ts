@@ -4,10 +4,10 @@ export interface Track {
   artist: string;
   artwork?: string;
   duration: number;
-  source: 'local' | 'youtube';
+  source: 'local' | 'youtube' | 'tts';
   url: string;
   isPlaying?: boolean;
-  addedAt: Date;
+  addedAt?: Date;
   isFavorite?: boolean;
   videoId?: string; // For YouTube tracks
 }

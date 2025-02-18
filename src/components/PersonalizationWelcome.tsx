@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { UserCog, AlertCircle } from 'lucide-react';
+import { UserCog, AlertCircle, X } from 'lucide-react';
 import { usePersonalizationStore } from '../store/personalization';
 
 interface PersonalizationWelcomeProps {
@@ -11,9 +11,10 @@ interface PersonalizationWelcomeProps {
 export function PersonalizationWelcome({ onClose, onSetup }: PersonalizationWelcomeProps) {
   const navigate = useNavigate();
   const [isClosing, setIsClosing] = useState(false);
-  const { hasSeenWelcome, loading, initialized } = usePersonalizationStore();
+  const { hasSeenWelcome, loading, initialized, setHasSeenWelcome } = usePersonalizationStore();
 
   const handleSetup = async () => {
+    await setHasSeenWelcome(true);
     onClose();
   };
 
@@ -21,6 +22,7 @@ export function PersonalizationWelcome({ onClose, onSetup }: PersonalizationWelc
     try {
       if (isClosing) return;
       setIsClosing(true);
+      await setHasSeenWelcome(true);
       await onClose();
     } catch (error) {
       console.error('Error in maybe later:', error);
@@ -28,8 +30,9 @@ export function PersonalizationWelcome({ onClose, onSetup }: PersonalizationWelc
     }
   };
 
-  const handleBackdropClick = (e: React.MouseEvent) => {
+  const handleBackdropClick = async (e: React.MouseEvent) => {
     if (e.target === e.currentTarget) {
+      await setHasSeenWelcome(true);
       onClose();
     }
   };
@@ -50,6 +53,14 @@ export function PersonalizationWelcome({ onClose, onSetup }: PersonalizationWelc
     >
       <div className="bg-background rounded-lg w-full max-w-2xl shadow-xl">
         <div className="p-6 space-y-6">
+          <button
+            onClick={handleMaybeLater}
+            className="absolute top-4 right-4 p-2 text-muted-foreground hover:text-foreground rounded-full hover:bg-muted/50"
+            disabled={isClosing}
+            aria-label="Close"
+          >
+            <X className="h-5 w-5" />
+          </button>
           <div className="flex items-center gap-4">
             <div className="bg-primary/10 p-3 rounded-full">
               <UserCog className="h-8 w-8 text-primary" />

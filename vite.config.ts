@@ -39,10 +39,10 @@ export default defineConfig({
           'Origin': 'http://localhost:8081'
         }
       },
-      '/gemini': {
+      '/v1beta': {
         target: 'https://generativelanguage.googleapis.com',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/gemini/, ''),
+        rewrite: (path) => path,
         headers: {
           'Origin': 'http://localhost:8081'
         }

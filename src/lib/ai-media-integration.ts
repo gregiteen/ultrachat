@@ -99,9 +99,9 @@ export class AIMediaIntegration {
       const message = this.generateShareMessage(content, config.message, personalizationDoc);
       
       switch (platform.toLowerCase()) {
-        case 'twitter':
+        case 'x':
           return {
-            service: 'twitter',
+            service: 'x',
             action: 'post',
             params: {
               text: message,

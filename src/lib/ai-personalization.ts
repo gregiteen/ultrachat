@@ -200,6 +200,26 @@ export class AIPersonalization {
   }
 
   /**
+   * Analyze user intent from input
+   */
+  public async detectIntent(
+    input: string,
+    context: {
+      messages: Array<{ role: string; content: string }>;
+      extractedInfo: any;
+    }
+  ) {
+    return use_mcp_tool({
+      server_name: 'gemini',
+      tool_name: 'analyze.intent',
+      arguments: {
+        text: input,
+        context
+      }
+    });
+  }
+
+  /**
    * Extract topics of interest and expertise
    */
   private async extractTopics(

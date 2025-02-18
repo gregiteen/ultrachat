@@ -36,7 +36,7 @@ interface SocialMetrics {
 
 interface CrossPlatformPost {
   content: SocialContent;
-  platforms: Array<'twitter' | 'facebook' | 'instagram'>;
+  platforms: Array<'x' | 'facebook' | 'instagram'>;
   schedule?: Date;
   targeting?: {
     audience?: string[];
@@ -71,7 +71,7 @@ export class AISocialIntegration {
     User's request: "${input}"
 
     Available Platforms:
-    - Twitter
+    - X (formerly Twitter)
     - Facebook
     - Instagram
 
@@ -165,7 +165,7 @@ export class AISocialIntegration {
    * Analyze social media engagement and sentiment
    */
   public async analyzeSocialMetrics(
-    platforms: Array<'twitter' | 'facebook' | 'instagram'>,
+    platforms: Array<'x' | 'facebook' | 'instagram'>,
     timeframe: { start: Date; end: Date },
     personalizationDoc: PersonalizationDocument
   ): Promise<Record<string, SocialMetrics>> {
@@ -226,7 +226,7 @@ export class AISocialIntegration {
       };
 
       return this.analyzeSocialMetrics(
-        intent.platforms as Array<'twitter' | 'facebook' | 'instagram'>,
+        intent.platforms as Array<'x' | 'facebook' | 'instagram'>,
         timeframe,
         personalizationDoc
       );
@@ -343,7 +343,7 @@ export class AISocialIntegration {
    */
   private getPlatformConstraints(platform: string): Record<string, any> {
     switch (platform.toLowerCase()) {
-      case 'twitter':
+      case 'x':
         return {
           text_length: 280,
           media_count: 4,

@@ -1,8 +1,28 @@
-const GEMINI_API_URL = '/gemini/v1beta/models/gemini-pro:generateContent';
+const GEMINI_API_URL = import.meta.env.DEV ? '/v1beta/models/gemini-2.0-pro-exp-02-05:generateContent' : 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-pro-exp-02-05:generateContent';
 
 interface ChatMessage {
   role: 'user' | 'model';
   content: string;
+}
+
+interface PersonalizationContext {
+  name?: string;
+  personalDocument?: string;
+  backstory?: string;
+  interests?: string[];
+  expertise_areas?: string[];
+  preferences?: {
+    communication?: {
+      tone?: string;
+      style?: string;
+    };
+    learning?: {
+      style?: string;
+    };
+    work?: {
+      style?: string;
+    };
+  };
 }
 
 interface GeminiResponse {
@@ -15,18 +35,9 @@ interface GeminiResponse {
   }>;
 }
 
-interface PersonalizationContext {
-  name?: string;
-  personalDocument?: string;
-  preferences?: {
-    communication?: string;
-    learning?: string;
-    workStyle?: string;
-  };
-}
-
 interface SendMessageOptions {
   onStreamResponse?: (response: string) => void;
+  signal?: AbortSignal;
 }
 
 class Chat {
@@ -39,48 +50,77 @@ class Chat {
     this.context = context;
   }
 
-  private getSystemPrompt(): string {
-    let prompt = `You are UltraChat, a highly advanced AI assistant powered by Gemini Pro. You aim to provide exceptionally detailed, nuanced, and personalized responses while maintaining a friendly and professional tone. Your responses should demonstrate deep understanding and sophisticated analysis.
+  private getSystemPrompt(isSearch: boolean = false): string {
+    let prompt = `You are UltraChat, a highly advanced AI assistant powered by Gemini 2.0 Pro Experimental. You aim to provide exceptionally detailed, nuanced, and personalized responses while maintaining a professional tone. Your responses should demonstrate deep understanding and sophisticated analysis.
 
-Key Traits:
-- Highly knowledgeable and technically precise
-- Friendly and personable, but professional
-- Proactive in suggesting relevant information
-- Clear and well-structured responses
-- Maintains context and continuity
+Response Format:
+1. Always start with a clear, direct answer
+2. Use proper paragraph breaks for readability
+3. Format lists and technical information clearly
+4. Keep responses concise but informative
+5. Separate sections with clear headings when needed
 
-When providing code or technical information:
-- Include detailed explanations
-- Use proper formatting and syntax
-- Consider best practices
-- Explain your reasoning
-- Provide examples when helpful`;
+When thinking about a response:
+1. Use <thinking> tags to show your analysis
+2. Keep thoughts separate from the final response
+3. Structure thoughts logically
+4. Consider all relevant context
+
+When answering questions:
+1. Start with the most relevant information
+2. Use proper formatting:
+   - Paragraphs for explanations
+   - Bullet points for lists
+   - Headers for sections
+   - Code blocks for code
+3. Cite sources when available
+4. Include relevant context
+
+Search Results Format:
+1. Integrate search information naturally
+2. Maintain clear structure with sections
+3. Use proper citation format`;
 
     if (this.context) {
+      prompt += '\n\nPersonalization Context:';
+      
       if (this.context.name) {
-        prompt += `\n\nUser Name: ${this.context.name}`;
+        prompt += `\nName: ${this.context.name}`;
       }
+      
+      if (this.context.backstory) {
+        prompt += `\nBackground: ${this.context.backstory}`;
+      }
+      
+      if (this.context.interests?.length) {
+        prompt += `\nInterests: ${this.context.interests.join(', ')}`;
+      }
+      
+      if (this.context.expertise_areas?.length) {
+        prompt += `\nExpertise Areas: ${this.context.expertise_areas.join(', ')}`;
+      }
+      
       if (this.context.personalDocument) {
-        prompt += `\n\nUser Information:\n${this.context.personalDocument}`;
+        prompt += `\n\nDetailed Profile:\n${this.context.personalDocument}`;
       }
+      
       if (this.context.preferences) {
-        prompt += `\n\nPreferences:`;
-        if (this.context.preferences.communication) {
-          prompt += `\n- Communication Style: ${this.context.preferences.communication}`;
-        }
-        if (this.context.preferences.learning) {
-          prompt += `\n- Learning Style: ${this.context.preferences.learning}`;
-        }
-        if (this.context.preferences.workStyle) {
-          prompt += `\n- Work Style: ${this.context.preferences.workStyle}`;
+        prompt += '\n\nPreferences:';
+        if (this.context.preferences.communication?.tone) {
+          prompt += `\n- Communication Tone: ${this.context.preferences.communication.tone}`;
+          prompt += `\n- Communication Style: ${this.context.preferences.communication.style || 'Not specified'}`;
+          prompt += `\n- Learning Style: ${this.context.preferences.learning?.style || 'Not specified'}`;
+          prompt += `\n- Work Style: ${this.context.preferences.work?.style || 'Not specified'}`;
         }
       }
+      
+      prompt += '\n\nPlease tailor your responses to match these preferences and context.';
     }
 
     return prompt;
   }
 
-  async sendMessage(content: string, options?: SendMessageOptions): Promise<{ response: { text: () => string } }> {
+  async sendMessage(content: string, isSearch: boolean = false, options?: SendMessageOptions): Promise<{ response: { text: () => string } }> {
     // Add user message to history
     const userMessage: ChatMessage = { role: 'user', content };
     this.history.push(userMessage);
@@ -91,32 +131,26 @@ When providing code or technical information:
     }
 
     try {
-      const systemPrompt = this.getSystemPrompt();
-      const response = await fetch(`${GEMINI_API_URL}?key=${this.apiKey}`, {
+      const systemPrompt = this.getSystemPrompt(isSearch);
+      
+      const fetchOptions: RequestInit = {
+        signal: options?.signal,
         method: 'POST',
         headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
+          'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          contents: [
-            { 
-              role: 'user',
-              parts: [{ text: systemPrompt }]
-            },
-            ...this.history.map(msg => ({
-              role: msg.role === 'model' ? 'model' : 'user',
-              parts: [{ text: msg.content }]
-            }))
-          ],
-          generationConfig: {
-            temperature: 0.7,
-            topK: 20,
-            topP: 0.8,
-            maxOutputTokens: 4096
-          }
+          contents: [{
+            parts: [{
+              text: systemPrompt + "\n\n" + this.history.map(msg => 
+                `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`
+              ).join("\n") + "\n\nUser: " + content
+            }]
+          }]
         })
-      });
+      };
+
+      const response = await fetch(`${GEMINI_API_URL}?key=${this.apiKey}`, fetchOptions);
 
       if (!response.ok) {
         const errorText = await response.text();
@@ -143,16 +177,26 @@ When providing code or technical information:
       };
 
       // Simulate streaming by splitting response into chunks
-      const fullResponse = data.candidates[0].content.parts[0].text.trim();
+      let fullResponse = data.candidates[0].content.parts[0].text.trim();
       const words = fullResponse.split(' ');
       const chunkSize = 3; // Number of words per chunk
 
       for (let i = 0; i < words.length; i += chunkSize) {
         const chunk = words.slice(i, i + chunkSize).join(' ');
         streamResponse(words.slice(0, i + chunkSize).join(' '));
+        
+        // Check if request was aborted
+        if (options?.signal?.aborted) break;
+        
         // Small delay between chunks to simulate streaming
         await new Promise(resolve => setTimeout(resolve, 50));
       }
+
+      // Clean up response format
+      fullResponse = fullResponse
+        .replace(/<thinking>[\s\S]*?<\/thinking>/g, '') // Remove thinking tags
+        .replace(/\n{3,}/g, '\n\n') // Normalize multiple newlines
+        .trim();
 
       // Add AI response to history
       this.history.push({ role: 'model', content: responseText });
@@ -163,6 +207,10 @@ When providing code or technical information:
         }
       };
     } catch (error) {
+      // Handle aborted requests
+      if (error instanceof DOMException && error.name === 'AbortError') {
+        throw error;
+      }
       console.error('Gemini API error:', error);
       if (error instanceof Error) {
         throw new Error(`Failed to get response: ${error.message}`);
@@ -177,14 +225,21 @@ class GeminiAPI {
   private apiKey: string;
 
   constructor() {
-    this.apiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
-    if (!this.apiKey) {
-      console.warn('Gemini API key not found');
+    const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error('VITE_GEMINI_API_KEY environment variable is required');
     }
+    this.apiKey = apiKey;
   }
 
   startChat(): Chat {
     return new Chat(this.apiKey);
+  }
+  
+  startChatWithContext(context: PersonalizationContext): Chat {
+    const chat = new Chat(this.apiKey);
+    chat.setPersonalizationContext(context);
+    return chat;
   }
 
   async generateText(prompt: string): Promise<string> {

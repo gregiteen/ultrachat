@@ -1,6 +1,7 @@
 export interface PersonalInfo {
   name?: string;
   email?: string;
+  phone?: string;
   preferences?: string[];
   interests?: string[];
   expertise_areas?: string[];
@@ -8,6 +9,19 @@ export interface PersonalInfo {
   learning_style?: string;
   work_style?: string;
   goals?: string[];
+  backstory?: string;
+  projects?: string;
+  resume?: string;
+  personalization_document?: string;
+  communication_preferences?: {
+    tone?: string;
+  };
+  learning_preferences?: {
+    style?: string;
+  };
+  work_preferences?: {
+    style?: string;
+  };
   address?: {
     street?: string;
     city?: string;
@@ -39,7 +53,7 @@ export interface PersonalizationDocument {
   };
   interests: string[];
   expertise: string[];
-  goals: string[];  // Added goals array
+  goals: string[];
   task_preferences: {
     notification_channels: string[];
     reminder_frequency: 'high' | 'medium' | 'low';

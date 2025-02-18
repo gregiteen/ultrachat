@@ -70,7 +70,7 @@ export class AIIntegrationHub {
     - Communication: Slack, WhatsApp
     - Development: GitHub
     - Storage: Google Drive
-    - Social: Twitter, Facebook, Instagram
+    - Social: X, Facebook, Instagram
     - Media: Netflix, Hulu, YouTube
     - Productivity: Feedly, Google Maps
 
@@ -172,13 +172,13 @@ export class AIIntegrationHub {
     // Adapt content format based on platform and user preferences
     platforms.forEach(platform => {
       switch (platform.toLowerCase()) {
-        case 'twitter':
+        case 'x':
           actions.push({
             type: 'post',
-            service: 'twitter',
+            service: 'x',
             action: 'post.create',
             params: {
-              text: this.formatForTwitter(content.text),
+              text: this.formatForX(content.text),
               media: content.media,
               style: personalizationDoc.communication_style
             }
@@ -325,9 +325,9 @@ export class AIIntegrationHub {
   }
 
   /**
-   * Format content for Twitter
+   * Format content for X
    */
-  private formatForTwitter(text?: string): string {
+  private formatForX(text?: string): string {
     if (!text) return '';
     return text.length > 280 ? `${text.slice(0, 277)}...` : text;
   }

@@ -26,13 +26,30 @@ interface ReminderContext {
   hoursRemaining?: number;
 }
 
-export interface CalendarCredentials {
-  access_token: string;
-  expires_at: number;
-}
-
 export class CalendarExecutor {
-  constructor(credentials: CalendarCredentials) {}
+  private accessToken: string;
+  private expiresAt: number;
+
+  constructor(accessToken: string) {
+    if (!accessToken) {
+      throw new Error('Access token is required');
+    }
+    this.accessToken = accessToken;
+    this.expiresAt = Date.now() + 3600000; // 1 hour from now
+  }
+
+  async findConflicts(startTime: string, endTime: string) {
+    return [];
+  }
+
+  async createEvent(event: {
+    summary: string;
+    description?: string;
+    start: { dateTime: string };
+    end: { dateTime: string };
+  }) {
+    // Implementation
+  }
 }
 
 class CalendarService {

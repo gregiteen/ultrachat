@@ -70,27 +70,21 @@ export async function getCustomThemes(): Promise<Theme[]> {
   try {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
-      // Return empty array if not authenticated - this is normal
       return [];
     }
 
-    const result = await createQuery<DbTheme>(supabase, 'custom_themes')
-      .select('*')
+    const { data, error } = await supabase
+      .from('user_settings')
+      .select('settings')
       .eq('user_id', user.id)
-      .order('created_at', { ascending: false })
-      .execute();
+      .single();
 
-    if (result.error) {
-      const pgError = result.error as PostgrestError;
-      if (pgError?.code === '404' || pgError?.code === '42P01') {
-        // Table doesn't exist yet - this is normal during initial setup
-        return [];
-      }
-      console.error('Error fetching custom themes:', pgError);
+    if (error) {
+      console.error('Error fetching user settings:', error);
       return [];
     }
 
-    return Array.isArray(result.data) ? result.data.map(convertToTheme) : [];
+    return data?.settings?.customThemes || [];
   } catch (error) {
     console.error('Unexpected error fetching themes:', error);
     return [];
@@ -104,28 +98,34 @@ export async function createCustomTheme(theme: Theme): Promise<Theme | null> {
       throw new Error('User must be authenticated to create a theme');
     }
 
-    const dbTheme = convertToDbTheme(theme, user.id);
-    const result = await createQuery<DbTheme>(supabase, 'custom_themes')
-      .insert(dbTheme)
-      .select('*')
-      .single()
-      .execute();
+    // Get current settings
+    const { data, error } = await supabase
+      .from('user_settings')
+      .select('settings')
+      .eq('user_id', user.id)
+      .single();
 
-    if (result.error) {
-      const pgError = result.error as PostgrestError;
-      if (pgError?.code === '404' || pgError?.code === '42P01') {
-        // Table doesn't exist yet - this is normal during initial setup
-        return null;
-      }
-      console.error('Error creating custom theme:', pgError);
+    if (error) {
+      console.error('Error fetching user settings:', error);
       return null;
     }
 
-    if (!result.data || Array.isArray(result.data)) {
+    // Add new theme to customThemes array
+    const settings = data?.settings || {};
+    settings.customThemes = [...(settings.customThemes || []), theme];
+
+    // Update settings
+    const { error: updateError } = await supabase
+      .from('user_settings')
+      .update({ settings })
+      .eq('user_id', user.id);
+
+    if (updateError) {
+      console.error('Error updating user settings:', updateError);
       return null;
     }
 
-    return convertToTheme(result.data);
+    return theme;
   } catch (error) {
     console.error('Unexpected error creating theme:', error);
     return null;
@@ -139,30 +139,36 @@ export async function updateCustomTheme(theme: Theme): Promise<Theme | null> {
       throw new Error('User must be authenticated to update a theme');
     }
 
-    const dbTheme = convertToDbTheme(theme, user.id);
-    const result = await createQuery<DbTheme>(supabase, 'custom_themes')
-      .update(dbTheme)
-      .eq('theme_id', theme.id)
+    // Get current settings
+    const { data, error } = await supabase
+      .from('user_settings')
+      .select('settings')
       .eq('user_id', user.id)
-      .select('*')
-      .single()
-      .execute();
+      .single();
 
-    if (result.error) {
-      const pgError = result.error as PostgrestError;
-      if (pgError?.code === '404' || pgError?.code === '42P01') {
-        // Table doesn't exist yet - this is normal during initial setup
-        return null;
-      }
-      console.error('Error updating custom theme:', pgError);
+    if (error) {
+      console.error('Error fetching user settings:', error);
       return null;
     }
 
-    if (!result.data || Array.isArray(result.data)) {
+    // Update theme in customThemes array
+    const settings = data?.settings || {};
+    settings.customThemes = (settings.customThemes || []).map((t: Theme) =>
+      t.id === theme.id ? theme : t
+    );
+
+    // Update settings
+    const { error: updateError } = await supabase
+      .from('user_settings')
+      .update({ settings })
+      .eq('user_id', user.id);
+
+    if (updateError) {
+      console.error('Error updating user settings:', updateError);
       return null;
     }
 
-    return convertToTheme(result.data);
+    return theme;
   } catch (error) {
     console.error('Unexpected error updating theme:', error);
     return null;
@@ -176,19 +182,30 @@ export async function deleteCustomTheme(themeId: string): Promise<boolean> {
       throw new Error('User must be authenticated to delete a theme');
     }
 
-    const result = await createQuery<DbTheme>(supabase, 'custom_themes')
-      .delete()
-      .eq('theme_id', themeId)
+    // Get current settings
+    const { data, error } = await supabase
+      .from('user_settings')
+      .select('settings')
       .eq('user_id', user.id)
-      .execute();
+      .single();
 
-    if (result.error) {
-      const pgError = result.error as PostgrestError;
-      if (pgError?.code === '404' || pgError?.code === '42P01') {
-        // Table doesn't exist yet - this is normal during initial setup
-        return false;
-      }
-      console.error('Error deleting custom theme:', pgError);
+    if (error) {
+      console.error('Error fetching user settings:', error);
+      return false;
+    }
+
+    // Remove theme from customThemes array
+    const settings = data?.settings || {};
+    settings.customThemes = (settings.customThemes || []).filter((t: Theme) => t.id !== themeId);
+
+    // Update settings
+    const { error: updateError } = await supabase
+      .from('user_settings')
+      .update({ settings })
+      .eq('user_id', user.id);
+
+    if (updateError) {
+      console.error('Error updating user settings:', updateError);
       return false;
     }
 

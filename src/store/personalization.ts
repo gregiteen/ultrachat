@@ -1,269 +1,110 @@
 import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
-import type { Context } from '../types';
-import type { Track, Playlist } from '../types/audio';
-import type { PersonalInfo } from '../types/personalization';
+import type { PersonalInfo, PersonalizationDocument } from '../types/personalization';
 
 interface PersonalizationState {
-  contexts: Context[];
   initialized: boolean;
   loading: boolean;
   error: string | null;
-  activeContext: Context | null;
-  currentTrack: Track | null;
-  queue: Track[];
+  hasSeenWelcome: boolean;
+  isActive: boolean;
   personalInfo: PersonalInfo;
-  personalInfoInitialized: boolean;
-  playlists: Playlist[];
-  setActiveContext: (context: Context | null) => void;
-  setCurrentTrack: (track: Track | null) => void;
-  addToQueue: (track: Track) => void;
-  removeFromQueue: (trackId: string) => void;
-  clearQueue: () => void;
-  createPlaylist: (name: string) => Promise<void>;
-  addToPlaylist: (playlistId: string, track: Track) => Promise<void>;
-  removeFromPlaylist: (playlistId: string, trackId: string) => Promise<void>;
-  createContext: (name: string, content: string) => Promise<void>;
-  updateContext: (id: string, updates: Partial<Context>) => Promise<void>;
-  deleteContext: (id: string) => Promise<void>;
-  loadContexts: () => Promise<void>;
+  init: () => Promise<void>;
   updatePersonalInfo: (updates: Partial<PersonalInfo>) => Promise<void>;
   loadPersonalInfo: () => Promise<void>;
+  setHasSeenWelcome: (value: boolean) => Promise<void>;
+  togglePersonalization: () => Promise<void>;
+}
+
+const defaultPersonalInfo: PersonalInfo = {
+  name: '',
+  email: '',
+  phone: '',
+  preferences: [],
+  interests: [],
+  expertise_areas: [],
+  communication_style: '',
+  learning_style: '',
+  work_style: '',
+  goals: [],
+  backstory: '',
+  projects: '',
+  resume: '',
+  personalization_document: '',
+  communication_preferences: {
+    tone: ''
+  },
+  learning_preferences: {
+    style: ''
+  },
+  work_preferences: {
+    style: ''
+  }
+};
+
+function createPersonalizationDocument(info: PersonalInfo): string {
+  return `
+Name: ${info.name || ''}
+Background: ${info.backstory || ''}
+Interests: ${info.interests?.join(', ') || ''}
+Expertise Areas: ${info.expertise_areas?.join(', ') || ''}
+Communication Style: ${info.communication_style || ''}
+Learning Style: ${info.learning_style || ''}
+Work Style: ${info.work_style || ''}
+Goals: ${info.goals?.join(', ') || ''}
+Current Projects: ${info.projects || ''}
+
+Preferences:
+- Communication: ${info.communication_preferences?.tone || ''}
+- Learning: ${info.learning_preferences?.style || ''}
+- Work: ${info.work_preferences?.style || ''}
+`.trim();
 }
 
 export const usePersonalizationStore = create<PersonalizationState>((set, get) => ({
-  contexts: [],
   initialized: false,
   loading: false,
   error: null,
-  activeContext: null,
-  currentTrack: null,
-  personalInfo: {
-    name: '',
-    preferences: [],
-    interests: [],
-    communication_style: '',
-    learning_style: '',
-    expertise_areas: [],
-    voice_settings: null
-  },
-  queue: [],
-  personalInfoInitialized: false,
-  playlists: [],
+  hasSeenWelcome: false,
+  isActive: false,
+  personalInfo: defaultPersonalInfo,
 
-  setActiveContext: (context) => set({ activeContext: context }),
-
-  setCurrentTrack: (track) => set({ currentTrack: track }),
-
-  addToQueue: (track) => set(state => ({
-    queue: [...state.queue, track]
-  })),
-
-  removeFromQueue: (trackId) => set(state => ({
-    queue: state.queue.filter(track => track.id !== trackId)
-  })),
-
-  clearQueue: () => set({ queue: [] }),
-
-  createPlaylist: async (name) => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('User not authenticated');
-
-      const { data, error } = await supabase
-        .from('playlists')
-        .insert([
-          {
-            user_id: user.id,
-            name,
-            tracks: [],
-            created_at: new Date().toISOString()
-          }
-        ])
-        .select();
-
-      if (error) throw error;
-
-      set(state => ({
-        playlists: [...state.playlists, data[0]]
-      }));
-    } catch (error) {
-      console.error('Error creating playlist:', error);
-      throw error;
-    }
-  },
-
-  addToPlaylist: async (playlistId, track) => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('User not authenticated');
-
-      const playlist = get().playlists.find(p => p.id === playlistId);
-      if (!playlist) throw new Error('Playlist not found');
-
-      const { error } = await supabase
-        .from('playlists')
-        .update({
-          tracks: [...playlist.tracks, track]
-        })
-        .eq('id', playlistId)
-        .eq('user_id', user.id);
-
-      if (error) throw error;
-
-      set(state => ({
-        playlists: state.playlists.map(p =>
-          p.id === playlistId
-            ? { ...p, tracks: [...p.tracks, track] }
-            : p
-        )
-      }));
-    } catch (error) {
-      console.error('Error adding to playlist:', error);
-      throw error;
-    }
-  },
-
-  removeFromPlaylist: async (playlistId, trackId) => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('User not authenticated');
-
-      const playlist = get().playlists.find(p => p.id === playlistId);
-      if (!playlist) throw new Error('Playlist not found');
-
-      const { error } = await supabase
-        .from('playlists')
-        .update({
-          tracks: playlist.tracks.filter(t => t.id !== trackId)
-        })
-        .eq('id', playlistId)
-        .eq('user_id', user.id);
-
-      if (error) throw error;
-
-      set(state => ({
-        playlists: state.playlists.map(p =>
-          p.id === playlistId
-            ? { ...p, tracks: p.tracks.filter(t => t.id !== trackId) }
-            : p
-        )
-      }));
-    } catch (error) {
-      console.error('Error removing from playlist:', error);
-      throw error;
-    }
-  },
-
-  createContext: async (name, content) => {
+  init: async () => {
     try {
       set({ loading: true, error: null });
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('User not authenticated');
-
-      const { data, error } = await supabase
-        .from('contexts')
-        .insert([
-          {
-            user_id: user.id,
-            name,
-            content,
-            is_active: true
-          }
-        ])
-        .select();
-
-      if (error) throw error;
-
-      set(state => ({
-        contexts: [...state.contexts, data[0]]
-      }));
+      await get().loadPersonalInfo();
+      set({ initialized: true });
     } catch (error) {
-      console.error('Error creating context:', error);
-      set({ error: 'Failed to create context' });
+      console.error('Error initializing personalization:', error);
+      set({ error: 'Failed to initialize personalization' });
       throw error;
     } finally {
       set({ loading: false });
     }
   },
 
-  updateContext: async (id, updates) => {
+  togglePersonalization: async () => {
     try {
       set({ loading: true, error: null });
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
+
+      const newState = !get().isActive;
 
       const { error } = await supabase
-        .from('contexts')
-        .update(updates)
-        .eq('id', id)
-        .eq('user_id', user.id);
+        .from('user_personalization')
+        .upsert({
+          user_id: user.id,
+          ...get().personalInfo,
+          is_active: newState,
+          updated_at: new Date().toISOString()
+        });
 
       if (error) throw error;
-
-      set(state => ({
-        contexts: state.contexts.map(context =>
-          context.id === id ? { ...context, ...updates } : context
-        )
-      }));
+      set({ isActive: newState });
     } catch (error) {
-      console.error('Error updating context:', error);
-      set({ error: 'Failed to update context' });
-      throw error;
-    } finally {
-      set({ loading: false });
-    }
-  },
-
-  deleteContext: async (id) => {
-    try {
-      set({ loading: true, error: null });
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('User not authenticated');
-
-      const { error } = await supabase
-        .from('contexts')
-        .delete()
-        .eq('id', id)
-        .eq('user_id', user.id);
-
-      if (error) throw error;
-
-      set(state => ({
-        contexts: state.contexts.filter(context => context.id !== id),
-        activeContext: state.activeContext?.id === id ? null : state.activeContext
-      }));
-    } catch (error) {
-      console.error('Error deleting context:', error);
-      set({ error: 'Failed to delete context' });
-      throw error;
-    } finally {
-      set({ loading: false });
-    }
-  },
-
-  loadContexts: async () => {
-    try {
-      set({ loading: true, error: null });
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error('User not authenticated');
-
-      const { data: contexts, error } = await supabase
-        .from('contexts')
-        .select('*')
-        .eq('user_id', user.id);
-
-      if (error) throw error;
-
-      set({
-        contexts,
-        initialized: true,
-        activeContext: contexts.find(context => context.is_active) || null
-      });
-    } catch (error) {
-      console.error('Error loading contexts:', error);
-      set({ error: 'Failed to load contexts' });
-      throw error;
+      console.error('Error toggling personalization:', error);
+      set({ error: 'Failed to toggle personalization' });
     } finally {
       set({ loading: false });
     }
@@ -275,23 +116,29 @@ export const usePersonalizationStore = create<PersonalizationState>((set, get) =
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
 
+      const updatedInfo: PersonalInfo = {
+        ...get().personalInfo,
+        ...updates
+      };
+
+      // Generate personalization document
+      const personalizationDoc = createPersonalizationDocument(updatedInfo);
+      const finalUpdates = {
+        ...updatedInfo,
+        personalization_document: personalizationDoc
+      };
+
       const { error } = await supabase
         .from('user_personalization')
         .upsert({
           user_id: user.id,
-          ...get().personalInfo,
-          ...updates,
+          ...finalUpdates,
           updated_at: new Date().toISOString()
         });
 
       if (error) throw error;
 
-      set(state => ({
-        personalInfo: {
-          ...state.personalInfo,
-          ...updates
-        }
-      }));
+      set({ personalInfo: finalUpdates });
     } catch (error) {
       console.error('Error updating personal info:', error);
       set({ error: 'Failed to update personal info' });
@@ -314,10 +161,59 @@ export const usePersonalizationStore = create<PersonalizationState>((set, get) =
 
       if (error && error.code !== 'PGRST116') throw error;
 
-      set({ personalInfo: data || get().personalInfo, personalInfoInitialized: true });
+      if (data) {
+        // Ensure all required fields exist with defaults
+        const loadedInfo: PersonalInfo = {
+          ...defaultPersonalInfo,
+          ...data,
+          communication_preferences: {
+            ...defaultPersonalInfo.communication_preferences,
+            ...data.communication_preferences
+          },
+          learning_preferences: {
+            ...defaultPersonalInfo.learning_preferences,
+            ...data.learning_preferences
+          },
+          work_preferences: {
+            ...defaultPersonalInfo.work_preferences,
+            ...data.work_preferences
+          }
+        };
+
+        set({ 
+          personalInfo: loadedInfo,
+          isActive: data.is_active || false,
+          hasSeenWelcome: data.has_seen_welcome || false
+        });
+      }
     } catch (error) {
       console.error('Error loading personal info:', error);
       set({ error: 'Failed to load personal info' });
+    }
+  },
+
+  setHasSeenWelcome: async (value: boolean) => {
+    try {
+      set({ loading: true, error: null });
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error('User not authenticated');
+
+      const { error } = await supabase
+        .from('user_personalization')
+        .upsert({
+          user_id: user.id,
+          ...get().personalInfo,
+          has_seen_welcome: value,
+          updated_at: new Date().toISOString()
+        });
+
+      if (error) throw error;
+      set({ hasSeenWelcome: value });
+    } catch (error) {
+      console.error('Error updating welcome status:', error);
+      throw error;
+    } finally {
+      set({ loading: false });
     }
   }
 }));

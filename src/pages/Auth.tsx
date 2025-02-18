@@ -6,7 +6,6 @@ import { useThreadStore } from '../store/chat';
 export default function Auth() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [isLogin, setIsLogin] = useState(true);
   const [error, setError] = useState('');
   const { user, initialized, loading } = useAuthStore();
   const navigate = useNavigate();
@@ -27,20 +26,16 @@ export default function Auth() {
     );
   }
 
-  const { signIn, signUp } = useAuthStore();
+  const { signUp } = useAuthStore();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
     try {
-      if (isLogin) {
-        await signIn(email, password);
-        navigate('/chat');
-      } else {
-        await signUp(email, password);
-        setError('Please check your email for verification link');
-      } 
+      await signUp(email, password);
+      setError('Please check your email for verification link');
+      navigate('/');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
     }
@@ -51,15 +46,15 @@ export default function Auth() {
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         <img src="https://imgur.com/EJ0T2co.png" alt="UltraChat" className="mx-auto h-16 w-auto" />
         <h2 className="mt-6 text-center text-3xl font-extrabold text-foreground">
-          {isLogin ? 'Sign in to your account' : 'Create your account'}
+          Create your account
         </h2>
         <p className="mt-2 text-center text-sm text-muted-foreground">
-          {isLogin ? "Don't have an account? " : 'Already have an account? '}
+          Already have an account?
           <button
-            onClick={() => setIsLogin(!isLogin)}
+            onClick={() => navigate('/')}
             className="font-medium text-primary hover:text-secondary transition-colors"
           >
-            {isLogin ? 'Sign up' : 'Sign in'}
+            Sign in
           </button>
         </p>
       </div>
@@ -115,7 +110,7 @@ export default function Auth() {
                 disabled={loading}
                 className="flex w-full justify-center rounded-md bg-primary px-3 py-2 text-sm font-semibold text-button-text shadow-sm hover:bg-secondary transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-50"
               >
-                {isLogin ? 'Sign in' : 'Sign up'}
+                Sign up
               </button>
             </div>
           </form>

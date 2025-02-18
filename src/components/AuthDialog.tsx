@@ -34,7 +34,7 @@ export function AuthDialog({ isOpen, onClose, anchorRef }: AuthDialogProps) {
 
     try {
       await signIn(email, password);
-      navigate('/chat');
+      onClose(); // Just close the dialog, AuthProvider will handle navigation
     } catch (err) {
       setError(err instanceof Error ? err.message : 'An error occurred');
     }
@@ -108,7 +108,10 @@ export function AuthDialog({ isOpen, onClose, anchorRef }: AuthDialogProps) {
             </button>
             <button
               type="button"
-              onClick={() => navigate('/auth')}
+              onClick={() => {
+                onClose();
+                navigate('/auth');
+              }}
               className="text-sm text-primary hover:text-secondary transition-colors"
             >
               Create account

@@ -1,187 +1,142 @@
-import React, { useEffect, useRef, useState, useCallback, useMemo } from 'react';
-import { Virtuoso, VirtuosoHandle } from 'react-virtuoso';
-import { useMessageStore, useThreadStore } from '../store/chat';
-import { ChatMessage } from './ChatMessage';
-import type { Message } from '../types';
-import { withErrorBoundary } from './ErrorBoundary';
-import { Spinner } from '../design-system/components/feedback/Spinner';
+import React, { useEffect, useMemo } from 'react';
+import { Virtuoso } from 'react-virtuoso';
+import { useThreadStore } from '../store/chat';
+import { motion } from 'framer-motion';
+import { MessageSquare, Star, Trash2 } from 'lucide-react';
 
-const OVERSCAN_COUNT = 20;
-const INTERSECTION_THRESHOLD = 0.5;
-const SCROLL_DEBOUNCE_MS = 100;
+interface VirtualizedChatHistoryProps {
+  onThreadSelect?: () => void;
+}
 
-const VirtualizedChatHistory: React.FC = () => {
-  const virtuosoRef = useRef<VirtuosoHandle>(null);
-  const [error, setError] = useState<string | null>(null);
-  
-  const {
-    messages,
-    hasMoreMessages,
-    loading,
-    fetchMessages,
-    currentPage
-  } = useMessageStore();
-  
-  const { currentThreadId } = useThreadStore();
+export function VirtualizedChatHistory({ onThreadSelect }: VirtualizedChatHistoryProps) {
+  const { threads, currentThread, fetchThreads, selectThread, deleteThread, pinThread } = useThreadStore();
 
-  const loadMore = useCallback(async () => {
-    try {
-      if (!loading && hasMoreMessages && currentThreadId) {
-        const nextPage = currentPage + 1;
-        await fetchMessages(currentThreadId, nextPage);
+  useEffect(() => {
+    fetchThreads();
+  }, [fetchThreads]);
+
+  const handleThreadClick = (threadId: string) => {
+    selectThread(threadId);
+    onThreadSelect?.();
+  };
+
+  const handlePinThread = async (e: React.MouseEvent, threadId: string) => {
+    e.stopPropagation();
+    await pinThread(threadId);
+  };
+
+  const handleDeleteThread = async (e: React.MouseEvent, threadId: string) => {
+    e.stopPropagation();
+    await deleteThread(threadId);
+  };
+
+  // Group threads by date with memoization
+  const { groupedThreads, sortedDates } = useMemo(() => {
+    // Create a Map to track seen thread IDs
+    const seenThreads = new Map();
+    
+    // Group threads by date, ensuring uniqueness
+    const groups = threads.reduce((acc, thread) => {
+      // Skip if we've seen this thread before
+      if (seenThreads.has(thread.id)) {
+        return acc;
       }
-    } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Failed to load more messages';
-      setError(errorMessage);
-      console.error('Error loading messages:', err);
-    }
-  }, [loading, hasMoreMessages, currentThreadId, currentPage, fetchMessages]);
+      seenThreads.set(thread.id, true);
 
-  // Memoize intersection observer options
-  const observerOptions = useMemo(() => ({
-    threshold: INTERSECTION_THRESHOLD,
-    root: null,
-    rootMargin: '100px',
-  }), []);
+      const date = new Date(thread.created_at).toLocaleDateString();
+      if (!acc[date]) {
+        acc[date] = [];
+      }
+      acc[date].push(thread);
+      return acc;
+    }, {} as Record<string, typeof threads>);
 
-  // Optimized intersection observer setup
-  useEffect(() => {
-    if (!currentThreadId) return;
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const [entry] = entries;
-        if (entry?.isIntersecting) {
-          loadMore();
+    // Sort threads within each group by pinned status and updated_at
+    Object.values(groups).forEach(dateThreads => {
+      dateThreads.sort((a, b) => {
+        if (a.pinned !== b.pinned) {
+          return b.pinned ? 1 : -1;
         }
-      },
-      observerOptions
-    );
-
-    const firstMessage = document.querySelector('[data-message-id]');
-    if (firstMessage) {
-      observer.observe(firstMessage);
-    }
-
-    return () => {
-      observer.disconnect();
-    };
-  }, [loadMore, observerOptions, currentThreadId]);
-
-  // Scroll to bottom on new messages
-  useEffect(() => {
-    if (virtuosoRef.current && messages.length > 0) {
-      virtuosoRef.current.scrollToIndex({
-        index: messages.length - 1,
-        behavior: 'smooth',
+        return new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime();
       });
-    }
-  }, [messages.length]);
+    });
 
-  // Error recovery
-  useEffect(() => {
-    if (error) {
-      const timer = setTimeout(() => {
-        setError(null);
-      }, 5000);
-      return () => clearTimeout(timer);
-    }
-  }, [error]);
+    // Sort dates in reverse chronological order
+    const dates = Object.keys(groups).sort((a, b) => {
+      return new Date(b).getTime() - new Date(a).getTime();
+    });
 
-  // Memoize scroll handler with debouncing
-  const scrollHandler = useMemo(() => {
-    let scrollTimeout: NodeJS.Timeout;
-    return () => {
-      clearTimeout(scrollTimeout);
-      scrollTimeout = setTimeout(() => {
-        if (virtuosoRef.current) {
-          virtuosoRef.current.scrollToIndex({
-            index: messages.length - 1,
-            behavior: 'smooth',
-          });
-        }
-      }, SCROLL_DEBOUNCE_MS);
-    };
-  }, [messages.length]);
+    return { groupedThreads: groups, sortedDates: dates };
+  }, [threads]);
 
-  // Cleanup scroll handler
-  useEffect(() => {
-    return () => {
-      const scroller = document.querySelector('[data-virtuoso-scroller]');
-      if (scroller) {
-        scroller.removeEventListener('scroll', scrollHandler);
-      }
-    };
-  }, [scrollHandler]);
-
-  if (error) {
-    return (
-      <div 
-        role="alert"
-        className="flex h-full items-center justify-center text-red-500 p-4"
-      >
-        <p>{error}</p>
-        <button 
-          onClick={() => { setError(null); loadMore(); }}
-          className="ml-2 underline hover:text-red-600"
-          aria-label="Retry loading messages"
+  const renderThread = (thread: (typeof threads)[0], dateKey: string) => (
+    <motion.div
+      key={`${dateKey}-${thread.id}`}
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -20 }}
+      onClick={() => handleThreadClick(thread.id)}
+      className={`group flex items-center gap-3 p-3 rounded-lg cursor-pointer transition-colors ${
+        currentThread?.id === thread.id
+          ? 'bg-primary text-white'
+          : 'hover:bg-muted'
+      }`}
+    >
+      <MessageSquare className="h-5 w-5 flex-shrink-0" />
+      <span className="flex-1 text-sm font-medium truncate">
+        {thread.title || 'New Chat'}
+      </span>
+      <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <button
+          onClick={(e) => handlePinThread(e, thread.id)}
+          className={`p-1 rounded-lg transition-colors ${
+            currentThread?.id === thread.id
+              ? 'hover:bg-primary-dark text-white'
+              : 'hover:bg-muted-foreground/10 text-muted-foreground hover:text-foreground'
+          }`}
         >
-          Retry
+          <Star
+            className={`h-4 w-4 ${thread.pinned ? 'fill-current' : ''}`}
+          />
+        </button>
+        <button
+          onClick={(e) => handleDeleteThread(e, thread.id)}
+          className={`p-1 rounded-lg transition-colors ${
+            currentThread?.id === thread.id
+              ? 'hover:bg-primary-dark text-white'
+              : 'hover:bg-muted-foreground/10 text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          <Trash2 className="h-4 w-4" />
         </button>
       </div>
-    );
-  }
-
-  if (loading && messages.length === 0) {
-    return <LoadingSpinner size="large" />;
-  }
+    </motion.div>
+  );
 
   return (
-    <div className="flex-1 h-full">
-      <Virtuoso
-        ref={virtuosoRef}
-        data={messages}
-        startReached={loadMore}
-        overscan={OVERSCAN_COUNT}
-        role="log"
-        aria-label="Chat message history"
-        tabIndex={0}
-        scrollerRef={(el: HTMLElement | Window | null) => {
-          if (el) {
-            el.addEventListener('scroll', scrollHandler, { passive: true });
-          }
-        }}
-        itemContent={(_, message: Message) => (
-          <div 
-            key={message.id}
-            data-message-id={message.id}
-            className="p-2"
-            role="article"
-            aria-label={`Message from ${message.role}`}
-          >
-            <ChatMessage message={message} />
+    <Virtuoso
+      style={{ height: '100%' }}
+      totalCount={sortedDates.length}
+      itemContent={(index) => {
+        const date = sortedDates[index];
+        const dateThreads = groupedThreads[date];
+        return (
+          <div key={`date-group-${date}`} className="space-y-1 px-2">
+            <div className="sticky top-0 bg-background/95 backdrop-blur-sm z-10 py-2">
+              <h3 className="text-xs font-medium text-muted-foreground px-3">
+                {date === new Date().toLocaleDateString()
+                  ? 'Today'
+                  : date === new Date(Date.now() - 86400000).toLocaleDateString()
+                  ? 'Yesterday'
+                  : date}
+              </h3>
+            </div>
+            <div className="space-y-1">
+              {dateThreads.map(thread => renderThread(thread, date))}
+            </div>
           </div>
-        )}
-        followOutput="smooth"
-        alignToBottom
-        initialTopMostItemIndex={messages.length - 1}
-        components={{
-          Header: () => loading ? <LoadingSpinner size="small" /> : null,
-        }}
-      />
-    </div>
+        );
+      }}
+    />
   );
-};
-
-const LoadingSpinner = ({ size }: { size: 'small' | 'large' }) => (
-  <div className="flex h-full items-center justify-center p-2">
-    <Spinner size={size === 'large' ? 'lg' : 'sm'} color="primary" />
-  </div>
-);
-
-export default withErrorBoundary(VirtualizedChatHistory, {
-  onError: (error, errorInfo) => {
-    console.error('Chat history error:', error);
-    console.error('Component stack:', errorInfo.componentStack);
-  }
-});
+}

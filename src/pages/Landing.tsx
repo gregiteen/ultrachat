@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { MessageSquare, Zap, Shield, Globe, Inbox, CheckSquare, Search, Settings, User, LogIn } from 'lucide-react';
+import { MessageSquare, Zap, Shield, Globe, Inbox, CheckSquare, LogIn } from 'lucide-react';
 import { useAuthStore } from '../store/auth';
 import { AuthDialog } from '../components/AuthDialog';
 
@@ -42,13 +42,6 @@ export default function Landing() {
   const [showAuthDialog, setShowAuthDialog] = useState(false);
   const authButtonRef = useRef<HTMLButtonElement>(null);
 
-  const navItems = [
-    { to: '/chat', icon: <MessageSquare className="h-5 w-5" />, label: 'Chat' },
-    { to: '/browse', icon: <Globe className="h-5 w-5" />, label: 'Browse' },
-    { to: '/inbox', icon: <Inbox className="h-5 w-5" />, label: 'Inbox' },
-    { to: '/tasks', icon: <CheckSquare className="h-5 w-5" />, label: 'Tasks' },
-  ];
-
   return (
     <div className="bg-background">
       {/* Hero Section */}
@@ -60,26 +53,7 @@ export default function Landing() {
           
           {/* Navigation Items */}
           {user ? (
-            <div className="flex items-center gap-4">
-              {navItems.map((item) => (
-                <Link
-                  key={item.to}
-                  to={item.to}
-                  className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-foreground hover:text-primary transition-colors"
-                >
-                  {item.icon}
-                  <span className="hidden sm:inline">{item.label}</span>
-                </Link>
-              ))}
-              <div className="h-6 w-px bg-muted" />
-              <Link
-                to="/account"
-                className="flex items-center gap-2 px-3 py-2 text-sm font-medium text-foreground hover:text-primary transition-colors"
-              >
-                <User className="h-5 w-5" />
-                <span className="hidden sm:inline">Account</span>
-              </Link>
-            </div>
+            <Link to="/chat" className="text-sm font-medium text-foreground hover:text-primary transition-colors">Go to Chat</Link>
           ) : (
             <div className="flex items-center gap-4">
               <Link

@@ -66,12 +66,6 @@ export function createTaskChain(
   calendarExecutor: CalendarExecutor,
   gmailExecutor: GmailExecutor
 ) {
-  const orchestrator = new TaskOrchestrator(
-    taskExecutor,
-    calendarExecutor,
-    gmailExecutor
-  );
-
   const taskPrompt = PromptTemplate.fromTemplate(`
     Act as an intelligent task management assistant. Analyze the following request and:
     1. Extract task details and create a structured task
@@ -134,6 +128,9 @@ export function createTaskChain(
 
           await Promise.all(subtaskPromises);
         }
+
+        // Create orchestrator for scheduling and automation
+        const orchestrator = new TaskOrchestrator(taskExecutor, calendarExecutor, gmailExecutor);
 
         // Schedule task and set up automation
         await orchestrator.scheduleTask(task);

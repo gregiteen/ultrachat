@@ -13,16 +13,16 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {
     persistSession: true,
     autoRefreshToken: true,
-    detectSessionInUrl: true,
-    storageKey: 'ultrachat-auth-token',
+    detectSessionInUrl: false,
+    storageKey: 'sb-' + supabaseUrl.split('//')[1].split('.')[0] + '-auth-token',
     storage: window.localStorage, // Use local storage for better persistence
-  },
-  db: {
-    schema: 'public'
   },
   global: {
     headers: {
-      'X-Client-Info': 'ultrachat-bolt'
+      'X-Client-Info': 'ultrachat-bolt',
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+      'Prefer': 'return=representation'
     }
   }
 });
@@ -30,6 +30,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
 // Handle auth state changes
 export function onAuthStateChange(callback: (event: string | undefined, session: Session | null) => void): { unsubscribe: () => void; } {
   return supabase.auth.onAuthStateChange((event: string | undefined, session) => {
+    localStorage.setItem('sb-' + supabaseUrl.split('//')[1].split('.')[0] + '-auth-token', session?.access_token || '');
     console.log("AUTH STATE CHANGE", event, session);
     callback(event, session);
   }).data.subscription;

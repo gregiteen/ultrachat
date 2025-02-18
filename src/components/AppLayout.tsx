@@ -1,57 +1,51 @@
 import React, { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
-import { MessageSquare, Inbox, CheckSquare, User, LogOut, Globe, Volume2, Music2 } from 'lucide-react';
+import { useLocation } from 'react-router-dom';
+import { Menu, X } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useAuthStore } from '../store/auth';
 import { GlobalAudioPlayer } from './audio/GlobalAudioPlayer';
 import { AudioLibrary } from './audio/AudioLibrary';
 import type { Track } from '../types/audio';
 import { usePersonalizationStore } from '../store/personalization';
-
-interface NavItemProps {
-  to: string;
-  icon: React.ReactNode;
-  label: string;
-  isActive: boolean;
-  onClick?: () => void;
-}
-
-function NavItem({ to, icon, label, isActive, onClick }: NavItemProps) {
-  const content = (
-    <div
-      className={`flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
-        isActive
-          ? 'bg-primary text-button-text'
-          : 'text-muted-foreground hover:text-foreground hover:bg-muted'
-      }`}
-    >
-      {icon}
-      <span className="text-sm font-medium">{label}</span>
-    </div>
-  );
-
-  if (onClick) {
-    return (
-      <button onClick={onClick} className="w-full text-left">
-        {content}
-      </button>
-    );
-  }
-
-  return <Link to={to}>{content}</Link>;
-}
+import { useThreadStore, useMessageStore } from '../store/chat';
+import { useContextStore } from '../store/context';
+import { useSettingsStore } from '../store/settings';
+import { VirtualizedChatHistory } from './VirtualizedChatHistory';
+import { PromptLibrary } from './PromptLibrary';
+import { PersonalizationChatbot } from './PersonalizationChatbot';
+import { ExtendedChatbot } from './ExtendedChatbot';
+import { Toast, ToastContainer } from '../design-system/components/feedback/Toast';
+import { useToastStore } from '../store/toastStore';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const [isLibraryOpen, setIsLibraryOpen] = useState(false);
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
   const [queue, setQueue] = useState<Track[]>([]);
+  const [isLeftDrawerOpen, setIsLeftDrawerOpen] = useState(false);
+  const [isRightDrawerOpen, setIsRightDrawerOpen] = useState(false);
+  const [isChatbotMinimized, setIsChatbotMinimized] = useState(false);
 
-  const { user, signOut } = useAuthStore();
-  const { activeContext } = usePersonalizationStore();
+  const { signOut } = useAuthStore();
+  const { isActive, hasSeenWelcome } = usePersonalizationStore();
+  const { toasts, removeToast } = useToastStore();
+  const { messages } = useMessageStore();
 
   const handleSignOut = async () => {
     try {
+      // Clear all store states
+      useThreadStore.setState({ threads: [], currentThread: null, error: null, initialized: false });
+      useMessageStore.setState({ messages: [], error: null });
+      useContextStore.setState({ contexts: [], activeContext: undefined, error: null, initialized: false });
+      usePersonalizationStore.setState({ personalInfo: undefined, isActive: false, hasSeenWelcome: false, initialized: false });
+      useSettingsStore.setState({ settings: undefined });
+      
+      // Sign out from auth
       await signOut();
+      
+      // Navigate to home
+      window.location.href = '/';
+      
     } catch (error) {
       console.error('Error signing out:', error);
     }
@@ -68,81 +62,116 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <div className="flex h-screen bg-background">
-      {/* Sidebar */}
-      <aside className="w-64 border-r border-muted p-4">
-        <div className="flex flex-col h-full">
-          {/* Logo */}
-          <div className="mb-8">
-            <Link to="/" className="flex items-center gap-2">
-              <img src="/uc.svg" alt="Logo" className="h-8 w-8" />
-              <span className="text-lg font-semibold">UltraChat</span>
-            </Link>
-          </div>
+    <div className="flex h-screen bg-background overflow-hidden">
+      {/* Left Drawer Button */}
+      <button
+        onClick={() => setIsLeftDrawerOpen(true)}
+        className="fixed left-4 top-4 z-50 p-2 rounded-lg bg-background shadow-lg hover:bg-muted transition-colors"
+      >
+        <Menu className="h-5 w-5" />
+      </button>
 
-          {/* Navigation */}
-          <nav className="space-y-1 flex-1">
-            <NavItem
-              to="/chat"
-              icon={<MessageSquare className="h-5 w-5" />}
-              label="Chat"
-              isActive={location.pathname === '/chat'}
+      {/* Left Drawer (Chat History) */}
+      <AnimatePresence>
+        {isLeftDrawerOpen && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.5 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black z-40"
+              onClick={() => setIsLeftDrawerOpen(false)}
             />
-            <NavItem
-              to="/inbox"
-              icon={<Inbox className="h-5 w-5" />}
-              label="Inbox"
-              isActive={location.pathname === '/inbox'}
-            />
-            <NavItem
-              to="/tasks"
-              icon={<CheckSquare className="h-5 w-5" />}
-              label="Tasks"
-              isActive={location.pathname === '/tasks'}
-            />
-            <NavItem
-              to="/voices"
-              icon={<Volume2 className="h-5 w-5" />}
-              label="Voices"
-              isActive={location.pathname === '/voices'}
-            />
-            <NavItem
-              to="/browse"
-              icon={<Globe className="h-5 w-5" />}
-              label="Browse"
-              isActive={location.pathname === '/browse'}
-            />
-            <NavItem
-              to="#"
-              onClick={() => setIsLibraryOpen(true)}
-              icon={<Music2 className="h-5 w-5" />}
-              label="Audio Library"
-              isActive={false}
-            />
-          </nav>
+            <motion.div
+              initial={{ x: '-100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '-100%' }}
+              transition={{ type: 'spring', damping: 20 }}
+              className="fixed left-0 top-0 bottom-0 w-80 bg-background border-r border-muted z-50 overflow-hidden"
+            >
+              <div className="flex items-center justify-between p-4 border-b border-muted">
+                <h2 className="text-lg font-semibold">Chat History</h2>
+                <button
+                  onClick={() => setIsLeftDrawerOpen(false)}
+                  className="p-2 rounded-lg hover:bg-muted transition-colors"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+              <div className="h-full overflow-hidden">
+                <VirtualizedChatHistory onThreadSelect={() => setIsLeftDrawerOpen(false)} />
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
 
-          {/* User Section */}
-          <div className="space-y-1">
-            <NavItem
-              to="/account"
-              icon={<User className="h-5 w-5" />}
-              label="Account"
-              isActive={location.pathname === '/account'}
+      {/* Right Drawer Button */}
+      <button
+        onClick={() => setIsRightDrawerOpen(true)}
+        className="fixed right-4 top-4 z-50 p-2 rounded-lg bg-background shadow-lg hover:bg-muted transition-colors"
+      >
+        <Menu className="h-5 w-5" />
+      </button>
+
+      {/* Right Drawer (Prompt Library) */}
+      <AnimatePresence>
+        {isRightDrawerOpen && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.5 }}
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 bg-black z-40"
+              onClick={() => setIsRightDrawerOpen(false)}
             />
-            <NavItem
-              to="#"
-              onClick={handleSignOut}
-              icon={<LogOut className="h-5 w-5" />}
-              label="Sign Out"
-              isActive={false}
-            />
-          </div>
+            <motion.div
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 20 }}
+              className="fixed right-0 top-0 bottom-0 w-80 bg-background border-l border-muted z-50"
+            >
+              <PromptLibrary
+                isOpen={true}
+                onClose={() => setIsRightDrawerOpen(false)}
+              />
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
+
+      {/* Main Content with Floating Chatbot */}
+      <main className="flex-1 overflow-hidden relative">
+        <div className="h-full overflow-auto">
+          {children}
         </div>
-      </aside>
 
-      {/* Main Content */}
-      <main className="flex-1 overflow-hidden">
-        {children}
+        {/* Floating Chatbot */}
+        <AnimatePresence>
+          {(
+            <motion.div
+              initial={{ y: '100%', opacity: 0 }}
+              animate={{ y: isChatbotMinimized ? 'calc(100% - 40px)' : 0, opacity: 1 }}
+              exit={{ y: '100%', opacity: 0 }}
+              className="fixed bottom-0 right-0 w-96 h-[600px] bg-background border-l border-t border-muted shadow-lg rounded-tl-lg overflow-hidden z-50"
+            >
+              <button
+                onClick={() => setIsChatbotMinimized(!isChatbotMinimized)}
+                className="absolute top-2 right-2 p-2 rounded-lg hover:bg-muted transition-colors"
+              >
+                {isChatbotMinimized ? <Menu className="h-5 w-5" /> : <X className="h-5 w-5" />}
+              </button>
+              <div className="h-full pt-10">
+                {location.pathname === '/personalization' && !isActive && !hasSeenWelcome ? (
+                  <PersonalizationChatbot currentPath={location.pathname} />
+                ) : (
+                  <ExtendedChatbot currentPath={location.pathname} />
+                )}
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </main>
 
       {/* Global Audio Player */}
@@ -155,8 +184,19 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         isOpen={isLibraryOpen}
         onClose={() => setIsLibraryOpen(false)}
         onTrackSelect={handleTrackSelect}
-        currentTrack={currentTrack}
+        currentTrack={currentTrack || undefined}
       />
+
+      {/* Toast Container */}
+      <ToastContainer>
+        {toasts.map((toast) => (
+          <Toast
+            key={toast.id}
+            {...toast}
+            onClose={() => removeToast(toast.id)}
+          />
+        ))}
+      </ToastContainer>
     </div>
   );
 }

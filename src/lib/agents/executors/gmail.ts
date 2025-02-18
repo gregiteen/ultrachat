@@ -1,4 +1,4 @@
-export interface GmailMessage {
+interface GmailMessage {
   id: string;
   threadId: string;
   subject: string;
@@ -8,11 +8,6 @@ export interface GmailMessage {
   timestamp: string;
   read: boolean;
   labels: string[];
-}
-
-export interface GmailCredentials {
-  access_token: string;
-  expires_at: number;
 }
 
 interface MessageHeader {
@@ -46,9 +41,14 @@ declare global {
 
 export class GmailExecutor {
   private accessToken: string;
+  private expiresAt: number;
 
-  constructor(credentials: GmailCredentials) {
-    this.accessToken = credentials.access_token;
+  constructor(accessToken: string) {
+    if (!accessToken) {
+      throw new Error('Access token is required');
+    }
+    this.accessToken = accessToken;
+    this.expiresAt = Date.now() + 3600000; // 1 hour from now
   }
 
   private async loadGapiClient(): Promise<void> {

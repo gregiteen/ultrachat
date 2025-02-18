@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../store/auth';
 import { usePersonalizationStore } from '../store/personalization';
 import { useContextStore } from '../store/context';
@@ -10,6 +11,7 @@ interface AuthProviderProps {
 }
 
 export function AuthProvider({ children }: AuthProviderProps) {
+  const navigate = useNavigate();
   const { init: initAuth, setUser } = useAuthStore();
   const { init: initPersonalization } = usePersonalizationStore();
   const { fetchContexts } = useContextStore();
@@ -31,7 +33,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
         initialized = true;
       } catch (error) {
         console.error('Error initializing auth:', error);
-        window.location.replace('/auth');
+        navigate('/', { replace: true });
       } finally {
         initializingRef.current = false;
       }
@@ -42,7 +44,14 @@ export function AuthProvider({ children }: AuthProviderProps) {
     // Set up auth state listener
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
       console.log('Auth state changed:', event, session?.user?.id);
-      
+
+      // Update auth token
+      if (session?.access_token) {
+        localStorage.setItem('supabase-auth-token', session.access_token);
+      } else {
+        localStorage.removeItem('supabase-auth-token');
+      }
+
       if (!mounted || !initialized) return;
 
       if (event === 'SIGNED_OUT') {
@@ -50,19 +59,31 @@ export function AuthProvider({ children }: AuthProviderProps) {
         // Clear all stores
         window.sessionStorage.clear();
         window.localStorage.clear();
-        if (window.location.pathname !== '/auth') {
-          window.location.replace('/auth');
+        if (window.location.pathname !== '/') {
+          navigate('/', { replace: true });
         }
       } else if (event === 'SIGNED_IN' && session?.user) {
         setUser(session.user);
+        
         try {
+          // Initialize all required data
           await Promise.all([
             initPersonalization(),
             fetchContexts(),
             fetchThreads()
           ]);
+
+          // Navigate to chat page after successful initialization
+          if (window.location.pathname === '/') {
+            navigate('/chat', { replace: true });
+          }
         } catch (error) {
           console.error('Error initializing data:', error);
+          // Show error to user
+          navigate('/', {
+            replace: true,
+            state: { error: 'Failed to initialize application. Please try again.' }
+          });
         }
       }
     });
@@ -71,7 +92,7 @@ export function AuthProvider({ children }: AuthProviderProps) {
       mounted = false;
       subscription.unsubscribe();
     };
-  }, [initAuth, setUser, initPersonalization, fetchContexts, fetchThreads]);
+  }, [initAuth, setUser, initPersonalization, fetchContexts, fetchThreads, navigate]);
 
   return <>{children}</>;
 }

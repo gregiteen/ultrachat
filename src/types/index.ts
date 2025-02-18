@@ -12,7 +12,19 @@ export interface Message {
   context_id?: string;
   user_id: string;
   files?: string[];
+  version_count: number;
   created_at: string;
+  versions?: MessageVersion[];
+}
+
+export interface MessageVersion {
+  id: string;
+  message_id: string;
+  content: string;
+  version_number: number;
+  created_at: string;
+  created_by: string;
+  is_current?: boolean;
 }
 
 export interface Thread {
@@ -20,13 +32,101 @@ export interface Thread {
   user_id: string;
   title: string;
   context_id?: string;
-  pinned: boolean;
+  pinned?: boolean;
   deleted_at?: string | null;
   created_at: string;
   updated_at: string;
 }
 
+export interface Context {
+  id: string;
+  user_id: string;
+  name: string;
+  ai_name: string;
+  content: string;
+  voice?: {
+    id: string;
+    name: string;
+    settings: {
+      stability: number;
+      similarity_boost: number;
+    };
+  };
+}
+
 export type User = SupabaseUser;
+
+// Theme types
+export interface Theme {
+  id: string;
+  name: string;
+  colors: {
+    background: string;
+    foreground: string;
+    primary: string;
+    secondary: string;
+    accent: string;
+    muted: string;
+    mutedForeground: string;
+    inputBackground: string;
+    buttonText: string;
+    iconColor: string;
+    iconHover: string;
+  };
+  spacing?: {
+    xs?: string;
+    sm?: string;
+    md?: string;
+    lg?: string;
+    xl?: string;
+  };
+  typography?: {
+    fontFamily?: string;
+    fontSize?: {
+      base?: string;
+      sm?: string;
+      lg?: string;
+    };
+    fontWeight?: {
+      normal?: number;
+      bold?: number;
+    };
+  };
+  animation?: {
+    duration?: {
+      fast?: string;
+      normal?: string;
+      slow?: string;
+    };
+    easing?: {
+      default?: string;
+      smooth?: string;
+      bounce?: string;
+    };
+  };
+  elevation?: {
+    low?: string;
+    medium?: string;
+    high?: string;
+  };
+  borderRadius?: {
+    sm?: string;
+    md?: string;
+    lg?: string;
+    full?: string;
+  };
+}
+
+// Settings types
+export interface Settings {
+  theme: Theme;
+  customThemes: Theme[];
+  notifications: {
+    email: boolean;
+    push: boolean;
+  };
+  volume: number;
+}
 
 // Integration types
 export interface Integration {
@@ -97,151 +197,28 @@ export interface TaskNotification {
   sent: boolean;
 }
 
-// Credential types
-export interface CredentialMetadata {
-  title?: string;
-  url?: string;
-  icon?: string;
-  category?: CredentialCategory;
+// Search types
+export interface SearchResponse {
+  summary: string;
+  sources: SearchSource[];
+  source_previews: { [key: string]: string };
+  followUps: FollowUpQuestion[];
 }
 
-export type CredentialCategory = 
-  | 'communication'
-  | 'productivity'
-  | 'social'
-  | 'development'
-  | 'storage'
-  | 'media'
-  | 'database';
-
-export const CATEGORIES: Record<CredentialCategory, string> = {
-  communication: 'Communication',
-  productivity: 'Productivity',
-  social: 'Social Media',
-  development: 'Development',
-  storage: 'Storage',
-  media: 'Media',
-  database: 'Database'
-};
-
-// Voice types
-export interface VoiceSettings {
-  stability: number;
-  similarity_boost: number;
+export interface SearchSource {
+  title: string;
+  link: string;
+  snippet: string;
+  domain_trust: number;
+  source: string;
+  relevanceScore: number;
 }
 
-export interface Voice {
-  id?: string;
-  name: string;
-  description?: string;
-  settings: VoiceSettings;
-}
-
-// Context types
-export interface Context {
-  id: string;
-  user_id: string;
-  name: string;
-  ai_name: string;
-  content: string;
-  files?: string[];
-  voice: Voice;
-  communication_preferences?: {
-    tone?: string;
-    style?: string;
+export interface FollowUpQuestion {
+  text: string;
+  type: 'clarification' | 'deeper' | 'related';
+  context?: {
+    source?: string;
+    relevance?: number;
   };
-  learning_preferences?: {
-    style?: string;
-    pace?: string;
-  };
-  work_preferences?: {
-    style?: string;
-    environment?: string;
-  };
-  personalization_document?: string;
-  created_at: string;
-  updated_at: string;
-}
-
-// Shared types used by both personalization and context systems
-export interface Address {
-  street?: string;
-  city?: string;
-  state?: string;
-  zip?: string;
-  country?: string;
-}
-
-export interface ClothingSizes {
-  top?: string;
-  bottom?: string;
-}
-
-export interface PersonalityTraits {
-  mbti?: string;
-  enneagram?: string;
-  customTraits?: string[];
-}
-
-export interface PersonalInfo {
-  name?: string;
-  email?: string;
-  phone?: string;
-  address?: Address;
-  job?: string;
-  company?: string;
-  projects?: string;
-  resume?: string;
-  height?: string;
-  weight?: string;
-  shoe_size?: string;
-  clothing_sizes?: ClothingSizes;
-  health_concerns?: string[];
-  pets?: string[];
-  goals?: string[];
-  dreams?: string[];
-  hobbies?: string[];
-  favorite_foods?: string[];
-  favorite_drinks?: string[];
-  family?: string[];
-  friends?: string[];
-  love_interests?: string[];
-  cultural_groups?: string[];
-  religion?: string;
-  worldview?: string;
-  personalityTraits?: PersonalityTraits;
-  backstory?: string;
-  interests?: string[];
-  expertise?: string[];
-  files?: string[];
-  communication_preferences?: {
-    tone?: string;
-    style?: string;
-  };
-  learning_preferences?: {
-    style?: string;
-    pace?: string;
-  };
-  work_preferences?: {
-    style?: string;
-    environment?: string;
-  };
-  personalization_document?: string;
-}
-
-export interface Contact {
-  name: string;
-  role?: string;
-  notes?: string;
-}
-
-// Unified Message types
-export interface UnifiedMessage {
-  id: string;
-  content: string;
-  sender: string;
-  source: 'email' | 'slack' | 'messenger' | 'instagram';
-  read: boolean;
-  created_at: string;
-  user_id: string;
 }

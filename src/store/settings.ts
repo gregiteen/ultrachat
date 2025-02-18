@@ -34,13 +34,14 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
 
+      // Fetch user settings
       const { data, error } = await supabase
         .from('user_settings')
         .select('settings')
         .eq('user_id', user.id)
         .maybeSingle();
 
-      console.log("fetchSettings - Raw data:", data); // Log raw data
+      console.log("fetchSettings - Raw data:", data);
 
       if (error) {
         if (error.code === 'PGRST116') {
@@ -58,7 +59,10 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
           throw error;
         }
       } else if (data) {
-        const mergedSettings = { ...defaultSettings, ...data.settings };
+        const mergedSettings = {
+          ...defaultSettings,
+          ...data.settings,
+        };
         // Apply theme immediately after loading
         if (mergedSettings.theme) {
           applyTheme(mergedSettings.theme);
@@ -91,7 +95,7 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
 
-      console.log("updateSettings - New settings:", newSettings); // Log new settings
+      console.log("updateSettings - New settings:", newSettings);
 
       const { error } = await supabase
         .from('user_settings')
@@ -112,22 +116,32 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   },
 
   addCustomTheme: async (theme: Theme) => {
-    const { settings } = get();
-    const newSettings = {
-      ...settings,
-      customThemes: [...settings.customThemes, theme],
-    };
-    await get().updateSettings(newSettings);
+    try {
+      const { settings } = get();
+      const newSettings = {
+        ...settings,
+        customThemes: [...settings.customThemes, theme],
+      };
+      await get().updateSettings(newSettings);
+    } catch (error) {
+      console.error('Error adding custom theme:', error);
+      throw new Error('Failed to add custom theme');
+    }
   },
 
   deleteCustomTheme: async (themeId: string) => {
-    const { settings } = get();
-    const newSettings = {
-      ...settings,
-      customThemes: settings.customThemes.filter((t) => t.id !== themeId),
-      // If the deleted theme was active, switch to the default theme
-      theme: settings.theme.id === themeId ? DESIGNER_THEMES[0] : settings.theme,
-    };
-    await get().updateSettings(newSettings);
+    try {
+      const { settings } = get();
+      const newSettings = {
+        ...settings,
+        customThemes: settings.customThemes.filter((t: Theme) => t.id !== themeId),
+        // If the deleted theme was active, switch to the default theme
+        theme: settings.theme.id === themeId ? DESIGNER_THEMES[0] : settings.theme,
+      };
+      await get().updateSettings(newSettings);
+    } catch (error) {
+      console.error('Error deleting custom theme:', error);
+      throw new Error('Failed to delete custom theme');
+    }
   },
 }));

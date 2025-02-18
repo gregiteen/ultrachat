@@ -5,21 +5,21 @@ import { aiSocialIntegration } from './ai-social-integration';
 import { aiPersonalization } from './ai-personalization';
 import type { PersonalizationDocument } from '../types/personalization';
 import type { PersonalInfo } from '../types';
+import type { 
+  LocationContext, 
+  TaskResult, 
+  MediaResult, 
+  ProductivityResult, 
+  SocialResult, 
+  AIIntent, 
+  MediaContent 
+} from '../types/integration';
 
 interface IntegrationContext {
   type: 'task' | 'media' | 'productivity' | 'social';
   action: string;
   data: any;
-  location?: {
-    coordinates: {
-      latitude: number;
-      longitude: number;
-    };
-    place?: {
-      name: string;
-      address: string;
-    };
-  };
+  location?: LocationContext;
 }
 
 interface IntegrationResult {
@@ -101,13 +101,21 @@ export class AIIntegrationOrchestrator {
           throw new Error(`Unknown integration type: ${integrationContext.type}`);
       }
     } catch (error) {
-      console.error('Integration error:', error);
+      let errorMessage = 'Failed to process integration request';
+      
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else if (typeof error === 'string') {
+        errorMessage = error;
+      }
+      
+      console.error('Integration error:', errorMessage);
+      
       return {
         success: false,
         action: 'error',
         data: {
-          message: 'Failed to process integration request',
-          error: error.message
+          message: errorMessage
         }
       };
     }
@@ -126,7 +134,7 @@ export class AIIntegrationOrchestrator {
       input,
       personalInfo,
       personalizationDoc
-    );
+    ) as TaskResult;
 
     // Set up cross-service integrations based on task type
     if (result.success) {
@@ -179,7 +187,7 @@ export class AIIntegrationOrchestrator {
     const result = await aiMediaIntegration.processMediaRequest(
       input,
       personalizationDoc
-    );
+    ) as MediaResult;
 
     // Set up cross-service integrations
     if (result.success && result.content) {
@@ -194,7 +202,7 @@ export class AIIntegrationOrchestrator {
                 title: result.content.title
               }
             },
-            platforms: ['twitter', 'facebook']
+            platforms: ['x', 'facebook']
           },
           personalizationDoc
         );
@@ -204,6 +212,7 @@ export class AIIntegrationOrchestrator {
       if (result.content.type === 'show' || result.content.type === 'movie') {
         await aiTaskAutomation.processTaskRequest(
           `Watch ${result.content.title}`,
+          {} as PersonalInfo,
           personalizationDoc
         );
       }
@@ -213,7 +222,7 @@ export class AIIntegrationOrchestrator {
       success: result.success,
       action: result.action,
       data: result.content,
-      suggestions: this.generateMediaSuggestions(result.content, personalizationDoc)
+      suggestions: this.generateMediaSuggestions(result.content as MediaContent, personalizationDoc)
     };
   }
 
@@ -229,12 +238,12 @@ export class AIIntegrationOrchestrator {
       input,
       personalizationDoc,
       context.location
-    );
+    ) as ProductivityResult;
 
     // Set up cross-service integrations
     if (result.success) {
       // Share important updates to social
-      if (result.actions.some(a => a.type === 'track' && a.status === 'completed')) {
+      if (result.actions.some((a: { type: string; status: string }) => a.type === 'track' && a.status === 'completed')) {
         await aiSocialIntegration.processSocialRequest(
           `Updated: ${result.actions[0].result.title}`,
           personalizationDoc
@@ -242,9 +251,10 @@ export class AIIntegrationOrchestrator {
       }
 
       // Create tasks for follow-ups
-      if (result.actions.some(a => a.type === 'schedule')) {
+      if (result.actions.some((a: { type: string }) => a.type === 'schedule')) {
         await aiTaskAutomation.processTaskRequest(
           `Follow up on ${result.actions[0].result.title}`,
+          {} as PersonalInfo,
           personalizationDoc
         );
       }
@@ -269,7 +279,7 @@ export class AIIntegrationOrchestrator {
     const result = await aiSocialIntegration.processSocialRequest(
       input,
       personalizationDoc
-    );
+    ) as SocialResult;
 
     // Set up cross-service integrations
     if (result.success) {
@@ -292,6 +302,7 @@ export class AIIntegrationOrchestrator {
       if (result.action === 'analyze') {
         await aiTaskAutomation.processTaskRequest(
           `Review social media metrics for ${result.platforms.join(', ')}`,
+          {} as PersonalInfo,
           personalizationDoc
         );
       }
@@ -318,7 +329,7 @@ export class AIIntegrationOrchestrator {
     const intent = await aiPersonalization.detectIntent(input, {
       messages: [],
       extractedInfo: {}
-    });
+    }) as AIIntent;
 
     // Map intent to integration type
     const type = this.mapIntentToIntegrationType(intent, input);
@@ -337,7 +348,7 @@ export class AIIntegrationOrchestrator {
    * Map AI intent to integration type
    */
   private mapIntentToIntegrationType(
-    intent: any,
+    intent: AIIntent,
     input: string
   ): IntegrationContext['type'] {
     if (intent.category === 'task' || input.toLowerCase().includes('task')) {
@@ -380,7 +391,7 @@ export class AIIntegrationOrchestrator {
     return suggestions;
   }
 
-  private generateMediaSuggestions(content: any, personalizationDoc: PersonalizationDocument): string[] {
+  private generateMediaSuggestions(content: MediaContent, personalizationDoc: PersonalizationDocument): string[] {
     const suggestions = [];
     
     if (content.type === 'show' || content.type === 'movie') {
@@ -399,10 +410,10 @@ export class AIIntegrationOrchestrator {
   private generateProductivitySuggestions(actions: any[], personalizationDoc: PersonalizationDocument): string[] {
     const suggestions = [];
     
-    if (actions.some(a => a.type === 'schedule')) {
+    if (actions.some((a: { type: string }) => a.type === 'schedule')) {
       suggestions.push('Set up recurring schedule');
     }
-    if (actions.some(a => a.type === 'track')) {
+    if (actions.some((a: { type: string }) => a.type === 'track')) {
       suggestions.push('Show me analytics');
     }
     if (personalizationDoc.task_preferences?.automation_level === 'high') {
@@ -412,7 +423,7 @@ export class AIIntegrationOrchestrator {
     return suggestions;
   }
 
-  private generateSocialSuggestions(result: any, personalizationDoc: PersonalizationDocument): string[] {
+  private generateSocialSuggestions(result: SocialResult, personalizationDoc: PersonalizationDocument): string[] {
     const suggestions = [];
     
     if (result.action === 'post') {

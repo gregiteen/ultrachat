@@ -1,11 +1,13 @@
 import { gemini } from './gemini';
 import { braveSearch } from './brave-search';
 import { googleSearch } from './google-search';
+import { usePersonalizationStore } from '../store/personalization';
 
 interface SearchResult {
   title: string;
   link: string;
   snippet: string;
+  domain_trust: number;
   source: string;
   relevanceScore: number;
 }
@@ -18,6 +20,7 @@ interface FollowUpQuestion {
 interface SearchResponse {
   summary: string;
   sources: SearchResult[];
+  source_previews: { [key: string]: string };
   followUps: FollowUpQuestion[];
 }
 
@@ -52,8 +55,7 @@ Then, rewrite the query to:
 5. Add context-specific qualifiers
 6. Optimize for search engine relevance
 
-Return ONLY the rewritten query with no explanation or additional text.
-Example: "quantum computing" → "quantum computing fundamentals AND (applications OR use cases) AND current state of technology"`;
+Return ONLY the rewritten query with no explanation or additional text.`;
 
       const rewritten = await gemini.generateText(prompt);
       const result = rewritten.trim() || query;
@@ -65,126 +67,187 @@ Example: "quantum computing" → "quantum computing fundamentals AND (applicatio
     }
   }
 
-  private async rankResults(results: SearchResult[]): Promise<SearchResult[]> {
+  private calculateDomainTrust(domain: string): number {
+    let trustScore = 0.6; // Base score
+
+    // Academic and educational
+    if (domain.endsWith('.edu')) trustScore = 0.95;
+    // Government
+    else if (domain.endsWith('.gov')) trustScore = 0.9;
+    // Non-profit organizations
+    else if (domain.endsWith('.org')) trustScore = 0.85;
+    // Well-known tech sites
+    else if ([
+      'github.com',
+      'stackoverflow.com',
+      'developer.mozilla.org',
+      'w3.org'
+    ].includes(domain)) trustScore = 0.9;
+    // Major news and reference
+    else if ([
+      'wikipedia.org',
+      'reuters.com',
+      'nature.com',
+      'sciencedirect.com'
+    ].includes(domain)) trustScore = 0.88;
+    // Tech blogs and documentation
+    else if ([
+      'medium.com',
+      'dev.to',
+      'docs.microsoft.com',
+      'developers.google.com'
+    ].includes(domain)) trustScore = 0.82;
+
+    return trustScore;
+  }
+
+  private async rankResults(results: SearchResult[]): Promise<{ results: SearchResult[], previews: { [key: string]: string } }> {
     try {
       console.log('Ranking', results.length, 'results');
+      
       // Remove duplicates based on URL
       const uniqueResults = Array.from(new Map(results.map(r => [r.link, r])).values());
       console.log('After deduplication:', uniqueResults.length, 'results');
 
-      // Calculate domain authority scores (simple version)
-      const domainScores = new Map<string, number>();
-      uniqueResults.forEach(result => {
-        const domain = new URL(result.link).hostname;
-        // Prefer academic and well-known technical domains
-        if (domain.endsWith('.edu')) domainScores.set(domain, 0.9);
-        else if (domain.endsWith('.gov')) domainScores.set(domain, 0.85);
-        else if (domain.endsWith('.org')) domainScores.set(domain, 0.8);
-        else if (['github.com', 'stackoverflow.com', 'medium.com'].includes(domain)) {
-          domainScores.set(domain, 0.75);
-        } else {
-          domainScores.set(domain, 0.6);
-        }
-      });
-
-      // Enhance relevance scores with domain authority
+      // Generate source previews and calculate trust scores
+      const sourcePreviews = new Map<string, string>();
       const enhancedResults = uniqueResults.map(result => {
         const domain = new URL(result.link).hostname;
-        const domainScore = domainScores.get(domain) || 0.5;
+        const trustScore = this.calculateDomainTrust(domain);
         
+        if (!sourcePreviews.has(domain)) {
+          sourcePreviews.set(domain, `${result.title} - ${result.snippet.slice(0, 150)}...`);
+        }
+
         return {
           ...result,
-          relevanceScore: result.relevanceScore * domainScore
+          domain_trust: trustScore,
+          relevanceScore: result.relevanceScore * trustScore
         };
       });
 
       // Sort by enhanced relevance score
       const sortedResults = enhancedResults.sort((a, b) => b.relevanceScore - a.relevanceScore);
       console.log('Final ranked results:', sortedResults.length);
-      return sortedResults;
+
+      return {
+        results: sortedResults,
+        previews: Object.fromEntries(sourcePreviews)
+      };
     } catch (error) {
       console.error('Error ranking results:', error);
-      return results; // Return original results if ranking fails
+      return { results, previews: {} };
     }
   }
 
-  private async generateSummary(query: string, results: SearchResult[]): Promise<string> {
+  private async generateSummary(query: string, results: SearchResult[], includePersonalization: boolean = true): Promise<string> {
     try {
       console.log('Generating summary for', results.length, 'results');
-      const sources = results.map(r => 
-        `Source: ${r.title}\nURL: ${r.link}\nExcerpt: ${r.snippet}\n`
-      ).join('\n');
+      const sources = results.map(r => {
+        const domain = new URL(r.link).hostname;
+        return `Source: ${r.title} (Trust Score: ${r.domain_trust.toFixed(2)})
+URL: ${r.link}
+Domain: ${domain}\n
+Excerpt: ${r.snippet}`;
+      }).join('\n');
 
-      const prompt = `Based on these search results for "${query}", provide a comprehensive answer that combines information from multiple sources. 
+      // Get personalization context if active
+      let personalizationContext = '';
+      if (includePersonalization) {
+        const { isActive, personalInfo } = usePersonalizationStore.getState();
+        if (isActive && personalInfo) {
+          personalizationContext = `
+User Context:
+- Name: ${personalInfo.name || 'Not specified'}
+- Interests: ${personalInfo.interests?.join(', ') || 'Not specified'}
+- Expertise: ${personalInfo.expertise_areas?.join(', ') || 'Not specified'}
+- Communication Style: ${personalInfo.communication_preferences?.tone || 'Not specified'}
+- Learning Style: ${personalInfo.learning_style || 'Not specified'}
+
+Please tailor the response to match this user's background and preferences while maintaining accuracy and comprehensiveness.
+`;
+        }
+      }
+
+      const prompt = `Based on these search results for "${query}", provide a beautifully formatted markdown response that reads like an expert explanation.
 
 IMPORTANT REQUIREMENTS:
-1. ALWAYS start with the CURRENT/LATEST information first
-2. ALWAYS include explicit citations using [1], [2], etc. after EVERY fact
-3. ALWAYS specify dates when available
-4. ALWAYS include direct quotes when relevant
-5. NEVER make statements without a citation
+1. Format the response in clean, readable markdown
+2. Use proper heading levels (# for main, ## for sub)
+3. Format citations in small text using <small> tags
+4. Use bullet points and numbered lists appropriately
+5. Include relevant code blocks with proper syntax highlighting
+6. Add horizontal rules (---) between major sections
 
+Citations should be formatted like this:
+<small>Source: domain.com</small>
+
+Content Requirements:
 Your response should:
-
-1. Start with a clear, direct answer to the main question
-2. Include specific facts, figures, and dates with citations
-3. Use inline citations for EVERY fact (e.g., "According to [1]...")
-4. Quote directly from sources when relevant
-5. Compare and contrast different viewpoints
-6. End with sources list
+1. Begin with a clear, direct answer
+2. Integrate citations naturally using domain names
+3. Quote directly from highly trusted sources
+4. Compare different viewpoints when available
+5. End with a strong conclusion
 
 Search Results:
 ${sources}
 
-Format your response as:
-1. Main answer with citations
-2. Additional details with citations
-3. Sources list
-`;
+${personalizationContext}
+
+Remember: 
+- Keep thinking separate using <thinking> tags
+- Make the response beautiful and easy to read with proper markdown formatting`;
 
       const summary = await gemini.generateText(prompt);
       console.log('Summary generated:', summary.length, 'characters');
       return summary || 'Unable to generate summary. Please review the sources below.';
     } catch (error) {
       console.error('Summary generation error:', error);
-      return 'Unable to generate summary. Here are the relevant sources:\n\n' + 
-             results.map(r => `- ${r.title} (${r.link})`).join('\n');
+      return 'Unable to generate summary due to an error.';
     }
   }
 
-  private async generateFollowUps(query: string, results: SearchResult[]): Promise<FollowUpQuestion[]> {
+  private async generateFollowUps(query: string, results: SearchResult[], includePersonalization: boolean = true): Promise<FollowUpQuestion[]> {
     try {
       console.log('Generating follow-up questions');
       const prompt = `Based on this search query and results, generate 3 follow-up questions that would help explore the topic further:
 
-Query: "${query}"
+Original Query: "${query}"
 
-Context from Results:
+Search Context:
 ${results.map(r => r.title).join('\n')}
 
-Generate questions that:
-1. Clarify ambiguous aspects of the original query
-2. Explore deeper technical implications
-3. Connect to related practical applications
-4. Address potential misconceptions
-5. Consider future developments or trends
+${(() => {
+  if (includePersonalization) {
+    const { isActive, personalInfo } = usePersonalizationStore.getState();
+    if (isActive && personalInfo) {
+      return `User Interests: ${personalInfo.interests?.join(', ') || 'Not specified'}
+User Expertise: ${personalInfo.expertise_areas?.join(', ') || 'Not specified'}
 
-Question types:
-- "clarification": Resolve ambiguities or define terms
-- "deeper": Explore technical details or implications
-- "related": Connect to practical applications or related topics
+Consider the user's interests and expertise level when generating questions.`;
+    }
+  }
+  return '';
+})()}
 
-Each question should be:
-- Specific and focused
-- Technically relevant
-- Naturally flowing from the original query
-- Designed to deepen understanding
+Requirements:
+1. Make questions clear and specific
+2. Ensure they flow naturally from the content
+3. Cover different aspects of the topic
+4. Make them interesting and engaging
+5. Keep them concise and clickable
+
+Types:
+- "clarification": Clarify concepts
+- "deeper": Dive deeper into details
+- "related": Connect to applications
 
 Format each question as a JSON object with "text" and "type" fields.
-Return an array of 3-5 question objects, nothing else.`;
+Return an array of 3 question objects, nothing else.`;
 
       const response = await gemini.generateStructuredResponse(prompt);
-      console.log('Generated', response.length, 'follow-up questions');
+      console.log('Generated follow-up questions');
       return response as FollowUpQuestion[];
     } catch (error) {
       console.error('Follow-up questions generation error:', error);
@@ -207,7 +270,7 @@ Return an array of 3-5 question objects, nothing else.`;
       console.log('Starting parallel search requests...');
       const [braveResults, googleResults] = await Promise.all([
         braveSearch.search(rewrittenQuery).catch(error => {
-          console.error('Brave search error:', error);
+          console.error('Brave Search error:', error);
           return [];
         }),
         googleSearch.search(rewrittenQuery).catch(error => {
@@ -216,9 +279,10 @@ Return an array of 3-5 question objects, nothing else.`;
         })
       ]);
 
-      console.log('Search provider results:', { 
-        brave: braveResults.length, 
-        google: googleResults.length 
+      console.log('Search results by provider:', { 
+        'Brave Search': braveResults.length, 
+        'Google Search': googleResults.length,
+        'Total Raw': braveResults.length + googleResults.length
       });
 
       // Step 3: Normalize and combine results
@@ -227,6 +291,7 @@ Return an array of 3-5 question objects, nothing else.`;
           title: result.title,
           link: result.url,
           snippet: result.description,
+          domain_trust: 0.6, // Initial score, will be updated during ranking
           source: result.source || new URL(result.url).hostname,
           relevanceScore: result.relevance_score || (1 - (index * 0.05))
         })),
@@ -234,6 +299,7 @@ Return an array of 3-5 question objects, nothing else.`;
           title: result.title,
           link: result.link,
           snippet: result.snippet,
+          domain_trust: 0.6, // Initial score, will be updated during ranking
           source: result.pagemap?.metatags?.[0]?.['og:site_name'] || new URL(result.link).hostname,
           relevanceScore: 1 - ((index + braveResults.length) * 0.05)
         }))
@@ -241,42 +307,38 @@ Return an array of 3-5 question objects, nothing else.`;
 
       console.log('Combined results:', { 
         total: results.length,
-        fromBrave: braveResults.length,
-        fromGoogle: googleResults.length
+        'From Brave': braveResults.length,
+        'From Google': googleResults.length,
+        'After Deduplication': new Set(results.map(r => r.link)).size
       });
 
-      // Only throw if both search providers failed
-      if (results.length === 0 && braveResults.length === 0 && googleResults.length === 0) {
-        console.error('No results from either search provider');
-        throw new Error('Search services unavailable. Please try again later.');
+      if (results.length === 0) {
+        throw new Error('No search results found. Please try rephrasing your query.');
       }
 
       // Step 4: Enhanced ranking
-      const rankedResults = await this.rankResults(results);
+      const { results: rankedResults, previews: sourcePreviews } = await this.rankResults(results.filter(r => r.snippet && r.title));
       const topResults = rankedResults.slice(0, 5);
 
       if (topResults.length === 0) {
-        console.error('No relevant results after ranking');
         throw new Error('No relevant results found. Please try rephrasing your query.');
       }
 
-      console.log('Final results:', { 
-        total: results.length, 
-        ranked: rankedResults.length, 
-        selected: topResults.length 
-      });
-
       // Step 5: Generate summary
-      const summary = await this.generateSummary(query, topResults);
+      const { isActive } = usePersonalizationStore.getState();
+      const includePersonalization = isActive;
+
+      const summary = await this.generateSummary(query, topResults, includePersonalization);
 
       // Step 6: Generate follow-up questions
-      const followUps = await this.generateFollowUps(query, topResults);
+      const followUps = await this.generateFollowUps(query, topResults, includePersonalization);
 
       console.log('Search completed successfully');
 
       return {
         summary,
         sources: topResults,
+        source_previews: sourcePreviews,
         followUps: followUps.length > 0 ? followUps : [{
           text: 'Would you like more details about any of these results?',
           type: 'clarification'

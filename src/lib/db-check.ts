@@ -14,11 +14,8 @@ export async function verifyDatabaseStructure() {
       'threads',
       'messages',
       'user_personalization',
-      'contexts'
-    ];
-
-    const optionalTables = [
-      'custom_themes'
+      'contexts',
+      'user_settings'
     ];
 
     // Try to access each required table
@@ -46,26 +43,21 @@ export async function verifyDatabaseStructure() {
             console.error(`Error creating user_personalization:`, createError);
             return false;
           }
+        } else if (table === 'user_settings') {
+          // Create user settings record if it doesn't exist
+          const { error: createError } = await supabase
+            .from('user_settings')
+            .insert({ user_id: user.id, settings: {} })
+            .select('id')
+            .single();
+          
+          if (createError && createError.code !== 'PGRST116') {
+            console.error(`Error creating user_settings:`, createError);
+            return false;
+          }
         } else {
           console.error(`Error accessing ${table}:`, error);
           return false;
-        }
-      }
-    }
-
-    // Check optional tables but don't fail if they don't exist
-    for (const table of optionalTables) {
-      const { error } = await supabase
-        .from(table)
-        .select('id')
-        .eq('user_id', user.id)
-        .limit(1);
-
-      if (error && error.code !== 'PGRST116') {
-        if (error.code === '42P01') {
-          console.warn(`Optional table ${table} not found - this is normal during setup`);
-        } else {
-          console.warn(`Optional table ${table} not accessible:`, error);
         }
       }
     }

@@ -17,8 +17,8 @@ export const useGeminiStore = create<GeminiState>((set) => ({
     set({ loading: true, error: null });
     try {
       const model = new ChatGoogleGenerativeAI({
-        apiKey: import.meta.env.VITE_GOOGLE_API_KEY,
-        modelName: "gemini-pro",
+        apiKey: import.meta.env.VITE_GOOGLE_ACCESS_TOKEN,
+        modelName: "gemini-2.0-pro-exp-02-05",
         maxOutputTokens: 2048,
         temperature: 0.7,
       });

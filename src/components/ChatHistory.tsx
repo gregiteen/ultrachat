@@ -1,16 +1,12 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { format, isToday, isYesterday, isSameDay, parseISO } from 'date-fns';
-import { Search, X, MoreVertical, Pin, Trash2, Edit2, MessageSquare } from 'lucide-react';
+import { Search, X, MoreVertical, Pin, Trash2, Edit2 } from 'lucide-react';
 import { useThreadStore } from '../store/chat';
+import type { Thread } from '../types';
 
 interface GroupedThread {
   date: Date;
-  threads: Array<{
-    id: string;
-    title: string;
-    updated_at: string;
-    pinned: boolean;
-  }>;
+  threads: Thread[];
 }
 
 function HighlightedText({ text, highlight }: { text: string; highlight: string }) {
@@ -35,16 +31,12 @@ function HighlightedText({ text, highlight }: { text: string; highlight: string 
 }
 
 interface ThreadActionsProps {
-  thread: {
-    id: string;
-    title: string;
-    pinned: boolean;
-  };
+  thread: Thread;
   onClose: () => void;
 }
 
 function ThreadActions({ thread, onClose }: ThreadActionsProps) {
-  const { renameThread, deleteThread, togglePinThread } = useThreadStore();
+  const { deleteThread } = useThreadStore();
   const [isRenaming, setIsRenaming] = useState(false);
   const [newTitle, setNewTitle] = useState(thread.title);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -52,7 +44,7 @@ function ThreadActions({ thread, onClose }: ThreadActionsProps) {
   const handleRename = async (e: React.FormEvent) => {
     e.preventDefault();
     if (newTitle.trim()) {
-      await renameThread(thread.id, newTitle.trim());
+      await useThreadStore.getState().renameThread(thread.id, newTitle.trim());
       setIsRenaming(false);
       onClose();
     }
@@ -64,7 +56,7 @@ function ThreadActions({ thread, onClose }: ThreadActionsProps) {
   };
 
   const handleTogglePin = async () => {
-    await togglePinThread(thread.id);
+    await useThreadStore.getState().togglePinThread(thread.id);
     onClose();
   };
 
@@ -149,17 +141,17 @@ function ThreadActions({ thread, onClose }: ThreadActionsProps) {
 }
 
 export function ChatHistory() {
-  const { threads, loading, switchThread, currentThreadId, fetchThreads } = useThreadStore();
+  const { threads, loading, currentThread, selectThread, createThread } = useThreadStore();
   const [searchTerm, setSearchTerm] = useState('');
   const [activeThreadMenu, setActiveThreadMenu] = useState<string | null>(null);
 
-  // Fetch threads on mount
-  useEffect(() => {
-    fetchThreads();
-  }, [fetchThreads]);
-
-  const handleNewChat = () => {
-    switchThread('');
+  const handleNewChat = async () => {
+    try {
+      const thread = await createThread();
+      await selectThread(thread.id);
+    } catch (error) {
+      console.error('Error creating new chat:', error);
+    }
   };
 
   const filteredThreads = useMemo(() => {
@@ -209,7 +201,7 @@ export function ChatHistory() {
           onClick={handleNewChat}
           className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-button-text bg-primary rounded-lg hover:bg-secondary transition-colors mb-3"
         >
-          <MessageSquare className="h-4 w-4" />
+          <Search className="h-4 w-4" />
           New Chat
         </button>
         <div className="relative">
@@ -246,11 +238,11 @@ export function ChatHistory() {
                     <div
                       key={thread.id}
                       className={`relative flex items-center justify-between px-4 py-3 hover:bg-muted transition-colors ${
-                        currentThreadId === thread.id ? 'bg-muted' : ''
+                        currentThread?.id === thread.id ? 'bg-muted' : ''
                       }`}
                     >
                       <button
-                        onClick={() => switchThread(thread.id)}
+                        onClick={() => selectThread(thread.id)}
                         className="flex-1 text-left"
                       >
                         <div className="flex items-center space-x-2">
