@@ -6,7 +6,7 @@ import { useThreadStore } from '../store/chat';
 import type { Context } from '../types';
 import { VoiceRecorder } from './VoiceRecorder';
 import { speechRecognition } from '../lib/speech';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../lib/supabase-client';
 import { Spinner } from '../design-system/components/feedback/Spinner';
 import { PersonalizationButton } from './PersonalizationButton';
 import ContextEditor from './ContextEditor';

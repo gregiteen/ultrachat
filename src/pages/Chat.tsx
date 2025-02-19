@@ -7,19 +7,20 @@ import { QuoteSpinner } from '../components/QuoteSpinner';
 import { PersonalizationChatbot } from '../components/PersonalizationChatbot';
 import { usePersonalizationStore } from '../store/personalization';
 import { useThreadStore } from '../store/threadStore';
-import { useAuthStore } from '../store/auth';
+import { useAuth } from '../lib/auth-service';
 
 export default function Chat() {
   const navigate = useNavigate();
   const { sendMessage } = useMessageStore();
-  const { isActive, hasSeenWelcome, initialized: personalizationInitialized } = usePersonalizationStore();
+  const { isActive, hasSeenWelcome, initialized: personalizationInitialized, init: initPersonalization } = usePersonalizationStore();
   const { initialized: threadsInitialized, loading: threadsLoading, currentThread, fetchThreads, createThread } = useThreadStore();
-  const { user } = useAuthStore();
+  const { user } = useAuth();
 
   // Load threads when auth is ready
   useEffect(() => {
     if (user) {
       if (!threadsInitialized && !threadsLoading) {
+        initPersonalization().catch(console.error);
         fetchThreads().catch(console.error);
       }
     } else {

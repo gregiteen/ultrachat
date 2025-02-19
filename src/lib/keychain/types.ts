@@ -13,10 +13,11 @@ export interface KeyEntry {
   createdAt: Date;
   userId: string;
   encrypted: boolean;
-  version: number;
-  encryptedKey: number[];
-  iv: number[];
-  salt: number[];
+  version?: number;
+  encryptedKey?: number[];
+  iv?: number[];
+  salt?: number[];
+  metadata?: Record<string, any>;
 }
 
 export type KeychainAuditAction = 'add' | 'get' | 'remove' | 'clear';

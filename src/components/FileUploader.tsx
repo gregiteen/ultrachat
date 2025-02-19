@@ -1,5 +1,5 @@
 import React, { useRef, ReactNode } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../lib/supabase-client';
 
 interface FileUploaderProps {
   onChange: (paths: string[]) => void;

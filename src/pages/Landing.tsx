@@ -1,7 +1,7 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { MessageSquare, Zap, Shield, Globe, Inbox, CheckSquare, LogIn } from 'lucide-react';
-import { useAuthStore } from '../store/auth';
+import { useAuth } from '../lib/auth-service';
 import { AuthDialog } from '../components/AuthDialog';
 
 const features = [
@@ -38,9 +38,8 @@ const features = [
 ];
 
 export default function Landing() {
-  const { user } = useAuthStore();
+  const { user } = useAuth();
   const [showAuthDialog, setShowAuthDialog] = useState(false);
-  const authButtonRef = useRef<HTMLButtonElement>(null);
 
   return (
     <div className="bg-background">
@@ -55,7 +54,6 @@ export default function Landing() {
           ) : (
             <div className="flex items-center gap-4">
               <button
-                ref={authButtonRef}
                 onClick={() => setShowAuthDialog(true)}
                 className="flex items-center gap-2 px-4 py-2 bg-primary text-button-text rounded-lg hover:bg-secondary transition-colors"
               >
@@ -194,7 +192,6 @@ export default function Landing() {
       <AuthDialog 
         isOpen={showAuthDialog} 
         onClose={() => setShowAuthDialog(false)}
-        anchorRef={authButtonRef}
       />
     </div>
   );

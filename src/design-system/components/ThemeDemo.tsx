@@ -2,7 +2,7 @@ import React from 'react';
 import { Button } from './base/Button';
 import { useTheme } from '../theme';
 import { Settings, Sun, Moon, Mail, Ghost, Link, Palette } from 'lucide-react';
-import type { Theme } from '../theme/types';
+import type { Theme, ThemeVariant } from '../theme/types';
 
 function ThemeButton({ theme, isSelected, onClick }: { 
   theme: Theme; 
@@ -42,26 +42,26 @@ function ThemeButton({ theme, isSelected, onClick }: {
 }
 
 function ThemeDemo() {
-  const { theme, setTheme, allThemes, systemTheme } = useTheme();
+  const { theme: themeVariant, currentTheme, setTheme, themes } = useTheme();
 
   return (
     <div className="p-6 space-y-8">
       <div className="space-y-4">
         <h2 className="text-2xl font-semibold">Theme Selection</h2>
         <div className="flex flex-wrap gap-2">
-          {allThemes.map((t) => (
+          {themes.map((t) => (
             <ThemeButton
               key={t.id}
               theme={t}
-              isSelected={theme.id === t.id}
-              onClick={() => setTheme(t)}
+              isSelected={themeVariant === t.id}
+              onClick={() => setTheme(t.id as ThemeVariant)}
             />
           ))}
           <Button
-            variant={theme.id === systemTheme.id ? 'primary' : 'ghost'}
+            variant={themeVariant === 'system' ? 'primary' : 'ghost'}
             size="sm"
-            onClick={() => setTheme(systemTheme)}
-            icon={theme.id === 'modern-dark' ? <Moon size={16} /> : <Sun size={16} />}
+            onClick={() => setTheme('system')}
+            icon={currentTheme.id.includes('dark') ? <Moon size={16} /> : <Sun size={16} />}
           >
             System
           </Button>
@@ -109,7 +109,7 @@ function ThemeDemo() {
         <div className="grid gap-6 p-6 rounded-lg border border-muted">
           {/* Color Swatches */}
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-            {(Object.entries(theme.colors) as Array<[keyof Theme['colors'], string]>).map(([key, value]) => (
+            {(Object.entries(currentTheme.colors) as Array<[keyof Theme['colors'], string]>).map(([key, value]) => (
               <div key={key} className="space-y-2">
                 <div className="flex items-center gap-2">
                   <div

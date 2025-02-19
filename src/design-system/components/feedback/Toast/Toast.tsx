@@ -17,7 +17,7 @@ export const Toast: React.FC<ToastProps> = ({
   duration = 3000,
   onClose
 }) => {
-  const { theme } = useTheme();
+  const { currentTheme } = useTheme();
 
   React.useEffect(() => {
     if (duration > 0) {
@@ -39,28 +39,28 @@ export const Toast: React.FC<ToastProps> = ({
     switch (type) {
       case 'success':
         return {
-          bg: theme.colors.primary,
+          bg: theme.colors['accent-foreground'],
           icon: '✓'
         };
       case 'warning':
         return {
-          bg: theme.colors.accent,
+          bg: theme.colors.destructive,
           icon: '⚠'
         };
       case 'error':
         return {
-          bg: theme.colors.secondary,
+          bg: theme.colors.destructive,
           icon: '✕'
         };
       default:
         return {
-          bg: theme.colors.primary,
+          bg: theme.colors.accent,
           icon: 'ℹ'
         };
     }
   };
 
-  const { bg, icon } = getTypeStyles(theme);
+  const { bg, icon } = getTypeStyles(currentTheme);
 
   return (
     <AnimatePresence>
@@ -71,21 +71,21 @@ export const Toast: React.FC<ToastProps> = ({
         variants={variants}
         style={{
           background: bg,
-          borderRadius: theme.borderRadius.md,
-          boxShadow: theme.elevation.md,
-          color: theme.colors.buttonText,
+          borderRadius: '0.375rem',
+          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+          color: currentTheme.colors.foreground,
           display: 'flex',
           alignItems: 'center',
-          padding: theme.spacing.md,
-          marginBottom: theme.spacing.sm,
+          padding: '1rem',
+          marginBottom: '0.5rem',
           minWidth: '200px',
           maxWidth: '400px'
         }}
       >
         <span 
           style={{ 
-            marginRight: theme.spacing.sm, 
-            fontSize: theme.typography.fontSize.lg
+            marginRight: '0.5rem', 
+            fontSize: '1.125rem'
           }}
         >
           {icon}
@@ -99,10 +99,10 @@ export const Toast: React.FC<ToastProps> = ({
               border: 'none',
               color: 'inherit',
               cursor: 'pointer',
-              padding: theme.spacing.xs,
-              marginLeft: theme.spacing.sm,
+              padding: '0.25rem',
+              marginLeft: '0.5rem',
               opacity: 0.7,
-              transition: `opacity ${theme.animation.duration.fast} ${theme.animation.easing.easeInOut}`
+              transition: 'opacity 150ms ease-in-out'
             }}
             onMouseEnter={(e) => {
               e.currentTarget.style.opacity = '1';

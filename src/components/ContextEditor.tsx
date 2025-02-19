@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useContextStore } from '../store/context';
 import { X, Save, Trash2 } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../lib/supabase-client';
 import type { Context } from '../types';
 import { VoiceSection } from './context/VoiceSection';
 import { AIPersonalitySection } from './context/AIPersonalitySection';

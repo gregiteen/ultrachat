@@ -1,10 +1,8 @@
-import React, { Suspense, lazy, useEffect } from 'react';
-import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import React, { Suspense, lazy } from 'react';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { ThemeProvider } from './design-system/theme';
-import { useAuthStore } from './store/auth';
-import { AuthProvider } from './providers/AuthProvider';
+import { AuthGuard } from './components/AuthGuard';
 import { Spinner } from './design-system/components/feedback/Spinner';
-import { registerCleanupHandlers } from './lib/cleanup';
 
 // Lazy load components
 const Chat = lazy(() => import('./pages/Chat'));
@@ -29,134 +27,106 @@ const PageLoader = () => (
   </div>
 );
 
-// Route guard component
-function RouteGuard({ children }: { children: React.ReactNode }) {
-  const { user, initialized } = useAuthStore();
-  const location = useLocation();
-  const publicPaths = ['/', '/auth'];
+function AppRoutes() {
+  return (
+    <div className="min-h-screen bg-background text-foreground">
+      <Suspense fallback={<PageLoader />}>
+        <Routes>
+          {/* Public Routes */}
+          <Route 
+            path="/" 
+            element={
+              <AuthGuard>
+                <Landing />
+              </AuthGuard>
+            } 
+          />
+          <Route 
+            path="/auth" 
+            element={
+              <AuthGuard>
+                <Auth />
+              </AuthGuard>
+            } 
+          />
 
-  // Don't guard public paths
-  if (publicPaths.includes(location.pathname)) {
-    // If user is logged in and trying to access public paths, redirect to chat
-    if (initialized && user) {
-      return <Navigate to="/chat" replace />;
-    }
-    return <>{children}</>;
-  }
+          {/* Private Routes */}
+          <Route
+            path="/chat"
+            element={
+              <AuthGuard>
+                <AppLayout>
+                  <Chat />
+                </AppLayout>
+              </AuthGuard>
+            }
+          />
+          <Route 
+            path="/tasks" 
+            element={
+              <AuthGuard>
+                <AppLayout>
+                  <Tasks />
+                </AppLayout>
+              </AuthGuard>
+            } 
+          />
+          <Route 
+            path="/inbox" 
+            element={
+              <AuthGuard>
+                <AppLayout>
+                  <UnifiedInbox />
+                </AppLayout>
+              </AuthGuard>
+            } 
+          />
+          <Route 
+            path="/account" 
+            element={
+              <AuthGuard>
+                <AppLayout>
+                  <Account />
+                </AppLayout>
+              </AuthGuard>
+            } 
+          />
+          <Route 
+            path="/voices" 
+            element={
+              <AuthGuard>
+                <AppLayout>
+                  <Voices />
+                </AppLayout>
+              </AuthGuard>
+            } 
+          />
+          <Route 
+            path="/browse" 
+            element={
+              <AuthGuard>
+                <AppLayout>
+                  <Browse />
+                </AppLayout>
+              </AuthGuard>
+            } 
+          />
 
-  // For private paths
-  if (initialized && !user) {
-    return <Navigate to="/" replace />;
-  }
-
-  return <>{children}</>;
+          {/* Catch all route */}
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Routes>
+      </Suspense>
+    </div>
+  );
 }
 
 function App() {
-  // Register cleanup handlers on mount
-  useEffect(() => {
-    console.log('Registering cleanup handlers');
-    const cleanup = registerCleanupHandlers();
-    return cleanup;
-  }, []);
-
-  console.log('App rendering');
-  
   return (
-    <ThemeProvider>
-      <BrowserRouter>
-        <AuthProvider>
-          <div className="min-h-screen bg-background text-foreground">
-            <Suspense fallback={<PageLoader />}>
-              <Routes>
-                {/* Public Routes */}
-                <Route 
-                  path="/" 
-                  element={
-                    <RouteGuard>
-                      <Landing />
-                    </RouteGuard>
-                  } 
-                />
-                <Route 
-                  path="/auth" 
-                  element={
-                    <RouteGuard>
-                      <Auth />
-                    </RouteGuard>
-                  } 
-                />
-
-                {/* Private Routes */}
-                <Route
-                  path="/chat"
-                  element={
-                    <RouteGuard>
-                      <AppLayout>
-                        <Chat />
-                      </AppLayout>
-                    </RouteGuard>
-                  }
-                />
-                <Route 
-                  path="/tasks" 
-                  element={
-                    <RouteGuard>
-                      <AppLayout>
-                        <Tasks />
-                      </AppLayout>
-                    </RouteGuard>
-                  } 
-                />
-                <Route 
-                  path="/inbox" 
-                  element={
-                    <RouteGuard>
-                      <AppLayout>
-                        <UnifiedInbox />
-                      </AppLayout>
-                    </RouteGuard>
-                  } 
-                />
-                <Route 
-                  path="/account" 
-                  element={
-                    <RouteGuard>
-                      <AppLayout>
-                        <Account />
-                      </AppLayout>
-                    </RouteGuard>
-                  } 
-                />
-                <Route 
-                  path="/voices" 
-                  element={
-                    <RouteGuard>
-                      <AppLayout>
-                        <Voices />
-                      </AppLayout>
-                    </RouteGuard>
-                  } 
-                />
-                <Route 
-                  path="/browse" 
-                  element={
-                    <RouteGuard>
-                      <AppLayout>
-                        <Browse />
-                      </AppLayout>
-                    </RouteGuard>
-                  } 
-                />
-
-                {/* Catch all route */}
-                <Route path="*" element={<Navigate to="/" replace />} />
-              </Routes>
-            </Suspense>
-          </div>
-        </AuthProvider>
-      </BrowserRouter>
-    </ThemeProvider>
+    <BrowserRouter>
+      <ThemeProvider>
+        <AppRoutes />
+      </ThemeProvider>
+    </BrowserRouter>
   );
 }
 

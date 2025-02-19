@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../lib/supabase-client';
 import type { PersonalInfo, PersonalizationDocument } from '../types/personalization';
 import { useToastStore } from './toastStore';
 
@@ -98,6 +98,22 @@ export const usePersonalizationStore = create<PersonalizationState>((set, get) =
         .eq('user_id', user.id)
         .single();
 
+      if (error) {
+        // If table doesn't exist yet, just use defaults
+        if (error.code === 'PGRST116' || error.message?.includes('does not exist')) {
+          set({ 
+            initialized: true,
+            loading: false,
+            error: null,
+            personalInfo: defaultPersonalInfo,
+            isActive: false,
+            hasSeenWelcome: false
+          });
+          return;
+        }
+        throw error;
+      }
+
       // Set initial state based on whether we have personalization data
       if (data) {
         // Ensure all required fields exist with defaults
@@ -126,16 +142,23 @@ export const usePersonalizationStore = create<PersonalizationState>((set, get) =
           isActive: data.is_active || false,
           hasSeenWelcome: data.has_seen_welcome || false
         });
+      } else {
+        // No data found, set defaults and initialized state
+        set({ 
+          initialized: true,
+          loading: false,
+          error: null,
+          personalInfo: defaultPersonalInfo,
+          isActive: false,
+          hasSeenWelcome: false
+        });
       }
-
-      set({ 
-        loading: false 
-      });
     } catch (error) {
       console.error('Error initializing personalization:', error);
       set({ 
         error: 'Failed to initialize personalization',
         initialized: true,
+        loading: false,
         personalInfo: defaultPersonalInfo,
         isActive: false,
         hasSeenWelcome: false

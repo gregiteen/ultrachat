@@ -14,6 +14,64 @@ interface EncryptedData {
   encrypted: Buffer;
 }
 
+interface EncryptionResult {
+  encrypted: Uint8Array;
+  iv: Uint8Array;
+  salt: Uint8Array;
+  version: number;
+}
+
+export class KeychainEncryption {
+  private secret: string;
+
+  constructor(secret?: string) {
+    this.secret = secret || process.env.ENCRYPTION_SECRET || 'default-secret';
+  }
+
+  // Instance methods
+  async encrypt(data: string): Promise<string> {
+    return encryptData(data);
+  }
+
+  async decrypt(encryptedData: string): Promise<string> {
+    return decryptData(encryptedData);
+  }
+
+  async rotateKey(newSecret: string): Promise<void> {
+    await rotateEncryptionKey(this.secret, newSecret);
+    this.secret = newSecret;
+  }
+
+  async validate(): Promise<boolean> {
+    return validateEncryptionSetup();
+  }
+
+  // Static methods for keychain operations
+  static async encrypt(data: string, userId: string): Promise<EncryptionResult> {
+    const encrypted = await encryptData(data);
+    const parts = Buffer.from(encrypted, 'base64');
+    
+    return {
+      salt: parts.slice(0, SALT_LENGTH),
+      iv: parts.slice(SALT_LENGTH, SALT_LENGTH + IV_LENGTH),
+      encrypted: parts.slice(SALT_LENGTH + IV_LENGTH + TAG_LENGTH),
+      version: 1
+    };
+  }
+
+  static async rotateKey(
+    encrypted: Uint8Array,
+    iv: Uint8Array,
+    salt: Uint8Array,
+    userId: string,
+    currentVersion: number
+  ): Promise<EncryptionResult> {
+    // Re-encrypt with new key
+    return this.encrypt(Buffer.from(encrypted).toString(), userId);
+  }
+}
+
+// Helper functions
 function getKey(password: string, salt: Buffer): Promise<Buffer> {
   return new Promise((resolve, reject) => {
     crypto.pbkdf2(password, salt, ITERATIONS, KEY_LENGTH, 'sha256', (err, key) => {

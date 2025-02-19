@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../lib/supabase-client';
 import { KeychainEncryption } from '../lib/keychain/encryption';
 import { keychainAudit } from '../lib/keychain/audit';
 import { keychainCache } from '../lib/keychain/cache';
@@ -173,7 +173,7 @@ export const useKeychainStore = create<KeychainState>((set, get) => ({
         );
       }
 
-      return key;
+      return key ? key.key : null;
     } catch (error) {
       console.error('Error getting key for service:', error);
       return null;
@@ -199,7 +199,7 @@ export const useKeychainStore = create<KeychainState>((set, get) => ({
         new Uint8Array(key.iv),
         new Uint8Array(key.salt),
         user.id,
-        key.version
+        key.version || 1 // Default to version 1 if undefined
       );
 
       // Update in database

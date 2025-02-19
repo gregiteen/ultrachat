@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../lib/supabase-client';
 import { DESIGNER_THEMES, applyTheme } from '../lib/themes';
 import type { Settings, Theme } from '../types';
 

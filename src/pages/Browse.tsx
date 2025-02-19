@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useAuthStore } from '../store/auth';
+import { useAuth } from '../lib/auth-service';
 import { useMessageStore } from '../store/chat';
 import { useContextStore } from '../store/context';
 import { Search, Globe, Send, X, Grid2x2, Grid3x3 } from 'lucide-react';
@@ -19,7 +19,7 @@ interface BrowserSession {
 }
 
 export default function Browse() {
-  const { user } = useAuthStore();
+  const { user } = useAuth();
   const { sendMessage, messages, loading } = useMessageStore();
   const { activeContext, contexts } = useContextStore();
   const [input, setInput] = useState('');

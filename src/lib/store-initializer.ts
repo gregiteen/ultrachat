@@ -1,92 +1,59 @@
 import { usePersonalizationStore } from '../store/personalization';
-import { useContextStore } from '../store/context';
-import { useThreadStore } from '../store/chat';
+import { useThreadStore } from '../store/threadStore';
+import { useMessageStore } from '../store/chat';
+
+let isInitializing = false;
+let initialized = false;
 
 export const initializeStores = async (userId: string) => {
-  console.log('StoreInitializer - Starting sequential initialization for user:', userId);
-  
+  if (isInitializing) {
+    console.log('StoreInitializer - Already initializing, skipping');
+    return;
+  }
+
+  if (initialized) {
+    console.log('StoreInitializer - Already initialized, skipping');
+    return;
+  }
+
+  isInitializing = true;
   try {
-    // Initialize personalization with delay to prevent UI blocking
+    console.log('StoreInitializer - Starting sequential initialization for user:', userId);
+
+    // Initialize personalization
     console.log('StoreInitializer - Initializing personalization');
-    const { init: initPersonalization } = usePersonalizationStore.getState();
-    await initPersonalization();
+    await usePersonalizationStore.getState().init();
     console.log('StoreInitializer - Personalization initialized');
-    
-    // Initialize contexts
-    console.log('StoreInitializer - Initializing contexts');
-    const { fetchContexts } = useContextStore.getState();
-    await fetchContexts();
-    useContextStore.setState({ initialized: true, loading: false });
-    
+
     // Initialize threads
     console.log('StoreInitializer - Initializing threads');
-    const { fetchThreads } = useThreadStore.getState();
-    await fetchThreads();
+    await useThreadStore.getState().fetchThreads();
     console.log('StoreInitializer - Threads initialized');
-    useThreadStore.setState({ initialized: true });
-    
+
+    // Clear any existing messages
+    console.log('StoreInitializer - Clearing message store');
+    const currentThread = useThreadStore.getState().currentThread;
+    if (currentThread) {
+      useMessageStore.getState().clearThreadMessages(currentThread.id);
+    }
+    console.log('StoreInitializer - Message store cleared');
+
     console.log('StoreInitializer - All stores initialized successfully');
-  } catch (error) {
-    console.error('StoreInitializer - Error during initialization:', error);
-    cleanupStores();
-    throw error;
+    initialized = true;
+  } finally {
+    isInitializing = false;
   }
 };
 
-const defaultPersonalInfo = {
-  name: '',
-  email: '',
-  phone: '',
-  preferences: [],
-  interests: [],
-  expertise_areas: [],
-  communication_style: '',
-  learning_style: '',
-  work_style: '',
-  goals: [],
-  backstory: '',
-  projects: '',
-  resume: '',
-  personalization_document: '',
-  communication_preferences: {
-    tone: ''
-  },
-  learning_preferences: {
-    style: ''
-  },
-  work_preferences: {
-    style: ''
-  }
-};
-
-// Helper to cleanup stores
 export const cleanupStores = () => {
-  console.log('StoreInitializer - Resetting stores to initial state');
-  
-  // Reset stores to initial state using their state setters
-  usePersonalizationStore.setState({ 
-    initialized: false, 
-    loading: false, 
-    error: null,
-    hasSeenWelcome: false,
-    isActive: false,
-    personalInfo: defaultPersonalInfo
+  console.log('StoreInitializer - Cleaning up stores');
+  initialized = false;
+  usePersonalizationStore.getState().resetPersonalization();
+  useThreadStore.setState({
+    threads: [], currentThread: null, initialized: false
   });
-  
-  useContextStore.setState({ 
-    contexts: [], 
-    initialized: false, 
-    loading: false, 
-    error: null 
-  });
-  
-  useThreadStore.setState({ 
-    threads: [], 
-    currentThread: null, 
-    loading: false, 
-    error: null,
-    initialized: false
-  });
-  
-  console.log('StoreInitializer - Stores reset to initial state');
+  const currentThread = useThreadStore.getState().currentThread;
+  if (currentThread) {
+    useMessageStore.getState().clearThreadMessages(currentThread.id);
+  }
 };

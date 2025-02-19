@@ -509,3 +509,41 @@ class ElevenLabsAPI {
 }
 
 export const elevenlabs = new ElevenLabsAPI();
+
+export async function playTextToSpeech(text: string, id: string): Promise<void> {
+  try {
+    const voices = await elevenlabs.getVoices();
+    if (!voices.length) {
+      throw new Error('No voices available');
+    }
+    
+    const audioStream = await elevenlabs.textToSpeech({
+      text,
+      voice_id: voices[0].id,
+      stream: true
+    });
+
+    if (audioStream instanceof ReadableStream) {
+      const audio = new Audio();
+      const mediaSource = new MediaSource();
+      audio.src = URL.createObjectURL(mediaSource);
+
+      mediaSource.addEventListener('sourceopen', async () => {
+        const sourceBuffer = mediaSource.addSourceBuffer('audio/mpeg');
+        const reader = (audioStream as ReadableStream).getReader();
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          sourceBuffer.appendBuffer(value);
+        }
+
+        mediaSource.endOfStream();
+        await audio.play();
+      });
+    }
+  } catch (error) {
+    console.error('Error in playTextToSpeech:', error);
+    throw error;
+  }
+}

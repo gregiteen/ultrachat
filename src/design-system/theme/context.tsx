@@ -1,136 +1,100 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import type { Theme } from './types';
-import { themes } from './variants';
-import { applyTheme, getCurrentTheme, getSystemTheme } from './utils';
-import { useAuthStore } from '../../store/auth';
-import { getCustomThemes, createCustomTheme, updateCustomTheme, deleteCustomTheme } from '../../lib/theme-storage';
-
-interface ThemeContextValue {
-  theme: Theme;
-  setTheme: (theme: Theme) => void;
-  allThemes: Theme[];
-  designerThemes: Theme[];
-  customThemes: Theme[];
-  saveCustomTheme: (theme: Theme) => Promise<void>;
-  loading: boolean;
-  updateCustomTheme: (theme: Theme) => Promise<void>;
-  deleteCustomTheme: (themeId: string) => Promise<void>;
-  isCustomTheme: (themeId: string) => boolean;
-  systemTheme: Theme;
-}
+import React, { createContext, useContext, useEffect, useState } from "react";
+import { themes, modernLight } from "./variants";
+import { applyTheme, getCurrentTheme, getSystemTheme } from "./utils";
+import { useAuth } from "../../lib/auth-service";
+import { getCustomThemes, createCustomTheme, updateCustomTheme, deleteCustomTheme } from "../../lib/theme-storage";
+import { Theme, ThemeContextValue, ThemeVariant } from "./types";
 
 const ThemeContext = createContext<ThemeContextValue | undefined>(undefined);
 
+// Initialize with modernLight theme
+const initialTheme = modernLight;
+
+const getThemeById = (id: string, allThemes: Theme[]): Theme => {
+  return allThemes.find(t => t.id === id) || modernLight;
+};
+
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>(() => getCurrentTheme());
-  const [loading, setLoading] = useState(true);
+  const { user } = useAuth();
+  const [themeVariant, setThemeVariant] = useState<ThemeVariant>(getCurrentTheme());
+  const [currentTheme, setCurrentTheme] = useState<Theme>(initialTheme);
   const [customThemes, setCustomThemes] = useState<Theme[]>([]);
-  const systemTheme = getSystemTheme();
 
-  const isInitialized = useAuthStore((state) => state.initialized);
-  const user = useAuthStore((state) => state.user);
-  const isLoading = useAuthStore((state) => state.loading);
-
-  const setTheme = (newTheme: Theme) => {
-    setThemeState(newTheme);
-    applyTheme(newTheme);
-  };
-
-  const handleSaveCustomTheme = async (newTheme: Theme) => {
-    try {
-      const savedTheme = await createCustomTheme(newTheme);
-      if (savedTheme) {
-        setCustomThemes(prev => [...prev, savedTheme]);
-      }
-    } catch (error) {
-      console.error('Error saving custom theme:', error);
-    }
-  };
-
-  const handleUpdateCustomTheme = async (updatedTheme: Theme) => {
-    try {
-      const result = await updateCustomTheme(updatedTheme);
-      if (result) {
-        setCustomThemes(prev => 
-          prev.map(theme => theme.id === result.id ? result : theme)
-        );
-      }
-    } catch (error) {
-      console.error('Error updating custom theme:', error);
-    }
-  };
-
-  const handleDeleteCustomTheme = async (themeId: string) => {
-    try {
-      const success = await deleteCustomTheme(themeId);
-      if (success) {
-        setCustomThemes(prev => prev.filter(theme => theme.id !== themeId));
-      }
-    } catch (error) {
-      console.error('Error deleting custom theme:', error);
-    }
-  };
-
-  const isCustomTheme = (themeId: string) => {
-    return customThemes.some(theme => theme.id === themeId);
-  };
-
-  // Initialize theme and load custom themes when auth is ready
+  // Load custom themes
   useEffect(() => {
-    // Always apply the current theme, even if not initialized
-    applyTheme(theme);
-
-    // Only load custom themes when auth is ready and user is logged in
-    if (!isInitialized || isLoading) {
-      return;
+    if (user) {
+      getCustomThemes().then(setCustomThemes);
+    } else {
+      setCustomThemes([]);
     }
+  }, [user]);
 
-    if (!user) {
-      setLoading(false);
-      return;
-    }
-
-    const loadCustomThemes = async () => {
-      setLoading(true);
-      try {
-        const themes = await getCustomThemes();
-        setCustomThemes(themes);
-      } catch (error) {
-        console.error('Error loading custom themes:', error);
-      }
-      setLoading(false);
-    }
-    loadCustomThemes();
-  }, [isInitialized, isLoading, user]);
-
-  // Listen for theme change events
+  // Update current theme when variant or custom themes change
   useEffect(() => {
-    const handleThemeChange = (e: CustomEvent<Theme>) => {
-      setThemeState(e.detail);
+    const allThemes = [...themes, ...customThemes];
+    let newTheme: Theme;
+
+    if (themeVariant === 'system') {
+      const systemPreference = getSystemTheme();
+      newTheme = getThemeById(systemPreference, allThemes);
+    } else {
+      newTheme = getThemeById(themeVariant, allThemes);
+    }
+    
+    // Apply theme colors immediately
+    Object.entries(newTheme.colors).forEach(([key, value]) => {
+      document.documentElement.style.setProperty(`--${key}`, value);
+    });
+    setCurrentTheme(newTheme);
+    // Only apply theme if it's one of our base themes
+    if (['light', 'dark', 'system'].includes(themeVariant)) {
+      applyTheme(themeVariant);
+    } else {
+      // For custom themes, apply the closest base theme
+      applyTheme(newTheme.id.includes('dark') ? 'dark' : 'light');
+    }
+  }, [themeVariant, customThemes]);
+
+  // Handle system theme changes
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const handleChange = () => {
+      if (themeVariant === "system") {
+        const systemPreference = getSystemTheme();
+        const allThemes = [...themes, ...customThemes];
+        const systemTheme = getThemeById(systemPreference, allThemes);
+        setCurrentTheme(systemTheme);
+        applyTheme('system');
+      }
     };
 
-    window.addEventListener('themechange', handleThemeChange as EventListener);
-    return () => {
-      window.removeEventListener('themechange', handleThemeChange as EventListener);
-    };
-  }, []);
+    mediaQuery.addEventListener("change", handleChange);
+    return () => mediaQuery.removeEventListener("change", handleChange);
+  }, [themeVariant, customThemes]);
+
+  const value: ThemeContextValue = {
+    theme: themeVariant,
+    currentTheme,
+    setTheme: setThemeVariant,
+    themes: [...themes, ...customThemes],
+    createCustomTheme: async (name, colors) => {
+      const newTheme = await createCustomTheme(name, colors);
+      setCustomThemes(prev => [...prev, newTheme]);
+      return newTheme;
+    },
+    updateCustomTheme: async (id, name, colors) => {
+      const updatedTheme = await updateCustomTheme(id, name, colors);
+      setCustomThemes(prev => prev.map(t => t.id === id ? updatedTheme : t));
+      return updatedTheme;
+    },
+    deleteCustomTheme: async (id) => {
+      await deleteCustomTheme(id);
+      setCustomThemes(prev => prev.filter(t => t.id !== id));
+    }
+  };
 
   return (
-    <ThemeContext.Provider
-      value={{
-        theme,
-        setTheme,
-        allThemes: [...themes, ...customThemes],
-        designerThemes: themes,
-        customThemes,
-        saveCustomTheme: handleSaveCustomTheme,
-        loading,
-        updateCustomTheme: handleUpdateCustomTheme,
-        deleteCustomTheme: handleDeleteCustomTheme,
-        isCustomTheme,
-        systemTheme,
-      }}
-    >
+    <ThemeContext.Provider value={value}>
       {children}
     </ThemeContext.Provider>
   );
@@ -139,7 +103,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 export function useTheme() {
   const context = useContext(ThemeContext);
   if (context === undefined) {
-    throw new Error('useTheme must be used within a ThemeProvider');
+    throw new Error("useTheme must be used within a ThemeProvider");
   }
   return context;
 }

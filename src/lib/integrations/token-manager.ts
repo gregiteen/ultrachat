@@ -1,7 +1,7 @@
 /**
  * Integration token management system
  */
-import { supabase } from '../supabase';
+import { supabase } from '../supabase-client';
 import type { Integration } from '../../types/integration';
 import { keychainCache } from '../keychain/cache';
 import { keychainAudit } from '../keychain/audit';

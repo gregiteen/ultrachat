@@ -7,7 +7,7 @@
  * but all user-facing labels should use "assistant" terminology.
  */
 import { create } from 'zustand';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../lib/supabase-client';
 import type { Context } from '../types';
 import { createQuery } from '../lib/db';
 
@@ -25,6 +25,9 @@ interface ContextState {
   setActiveContext: (context: Context | null) => void;
 }
 
+// Prevent concurrent fetches
+let isFetching = false;
+
 export const useContextStore = create<ContextState>((set, get) => ({
   contexts: [],
   activeContext: null,
@@ -33,40 +36,87 @@ export const useContextStore = create<ContextState>((set, get) => ({
   error: null,
 
   fetchContexts: async () => {
+    if (isFetching) {
+      console.log('Context store - Already fetching contexts, waiting...');
+      while (isFetching) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+      return;
+    }
+
+    isFetching = true;
     set({ loading: true, error: null });
+
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error('User not authenticated');
 
+      // Try to create default context directly
+      const defaultContext: Partial<Context> = {
+        name: 'Default Assistant',
+        ai_name: 'Default Assistant',
+        content: 'I am a helpful AI assistant.',
+        user_id: user.id,
+        is_active: true,
+        voice: {
+          name: 'Default Voice',
+          settings: {
+            stability: 0.75,
+            similarity_boost: 0.75
+          }
+        }
+      };
+
+      const createResult = await createQuery<Context>(supabase, 'contexts')
+        .insert(defaultContext)
+        .select('*')
+        .single()
+        .execute();
+
+      if (!createResult.error) {
+        set({ 
+          contexts: [createResult.data as Context],
+          activeContext: createResult.data as Context,
+          initialized: true,
+          loading: false,
+          error: null
+        });
+        return;
+      }
+
+      // If insert failed, try to fetch existing contexts
       const result = await createQuery<Context>(supabase, 'contexts')
         .select('*')
         .eq('user_id', user.id)
         .order('created_at', { ascending: true })
         .execute();
 
-      if (result.error) {
-        // If table doesn't exist yet, just use empty array
-        if (result.error.message?.includes('does not exist')) {
-          set({ contexts: [], initialized: true });
-          return;
-        }
-        throw result.error;
-      }
+      if (result.error) throw result.error;
 
       const contexts = result.data as Context[];
-      set({ contexts });
-
+      
       // Set first context as active if none is selected
-      if (!get().activeContext && contexts.length > 0) {
-        set({ activeContext: contexts[0] });
-      }
-      set({ initialized: true });
+      const activeContext = get().activeContext || (contexts.length > 0 ? contexts[0] : null);
+      
+      set({ 
+        contexts,
+        activeContext,
+        initialized: true,
+        loading: false,
+        error: null
+      });
     } catch (error) {
       console.error('Error fetching contexts:', error);
-      set({ error: error instanceof Error ? error.message : 'Failed to fetch contexts' });
-      set({ contexts: [], initialized: true }); // Continue with empty contexts
+      // Set initialized even on error to prevent hanging
+      set({ 
+        error: error instanceof Error ? error.message : 'Failed to fetch contexts',
+        contexts: [],
+        activeContext: null,
+        initialized: true,
+        loading: false
+      });
     } finally {
-      set({ loading: false });
+      isFetching = false;
     }
   },
 
@@ -81,6 +131,7 @@ export const useContextStore = create<ContextState>((set, get) => ({
         ai_name: name,
         content,
         user_id: user.id,
+        is_active: true,
         voice: {
           name: 'Default Voice',
           settings: {

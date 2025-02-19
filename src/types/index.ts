@@ -94,12 +94,12 @@ export interface Context {
   id: string;
   user_id: string;
   name: string;
+  ai_name: string; // No longer optional
   content: string;
-  ai_name?: string;
   is_active: boolean;
   created_at: string;
   updated_at: string;
-  voice?: {
+  voice: { // No longer optional
     name: string;
     id?: string;
     settings: {
@@ -115,4 +115,47 @@ export interface AITrait {
   label: string;
   description: string;
   level: number;
+}
+
+export interface Theme {
+  id: string;
+  name: string;
+  colors: Record<string, string>;
+}
+
+export interface Settings {
+  theme: Theme;
+  customThemes: Theme[];
+  notifications: {
+    email: boolean;
+    push: boolean;
+  };
+  volume: number;
+}
+
+export interface UnifiedMessage {
+  id: string;
+  content: string;
+  source: string;
+  timestamp: string;
+  user_id: string;
+  read: boolean;
+  metadata?: Record<string, any>;
+}
+
+export interface Task {
+  id: string;
+  title: string;
+  description?: string;
+  status: 'todo' | 'in_progress' | 'done' | 'blocked';
+  priority: 'low' | 'medium' | 'high';
+  due_date?: string;
+  created_at: string;
+  updated_at?: string;
+  user_id: string;
+  parent_id?: string;
+  assignee?: string;
+  tags?: string[];
+  automation_rules?: Record<string, any>;
+  metadata?: Record<string, any>;
 }

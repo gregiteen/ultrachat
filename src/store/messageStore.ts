@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../lib/supabase-client';
 import { getChatModel } from '../lib/gemini';
 import { handleSearch } from '../lib/search-handler';
 import { integrationChat } from '../lib/integrations/chat-handler';

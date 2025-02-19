@@ -36,7 +36,7 @@ export const Spinner = React.forwardRef<HTMLDivElement, SpinnerProps>(
     'aria-label': ariaLabel = 'Loading',
     ...props
   }, ref) => {
-    const { theme } = useTheme();
+    const { currentTheme } = useTheme();
     
     // Memoize animation variants
     const spinAnimation = useMemo(() => ({
@@ -74,10 +74,10 @@ export const Spinner = React.forwardRef<HTMLDivElement, SpinnerProps>(
       cx: "12",
       cy: "12",
       r: "10",
-      stroke: theme.colors[color],
+      stroke: currentTheme?.colors?.[color] || currentTheme?.colors?.primary || '#2563eb',
       strokeWidth: thickness,
       fill: "none"
-    }), [theme.colors, color, thickness]);
+    }), [currentTheme?.colors, color, thickness]);
 
     return (
       <div

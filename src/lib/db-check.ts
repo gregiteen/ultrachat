@@ -1,4 +1,4 @@
-import { supabase } from './supabase';
+import { supabase } from './supabase-client';
 
 export async function verifyDatabaseStructure() {
   console.log('Verifying database structure...');

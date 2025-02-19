@@ -1,6 +1,41 @@
 import { create } from 'zustand';
-import { supabase } from '../lib/supabase';
-import type { SubscriptionTier, ApiUsage, BillingDetails } from '../types';
+import { supabase } from '../lib/supabase-client';
+
+export interface SubscriptionTier {
+  id: string;
+  name: string;
+  billing_period?: string;
+  price?: number;
+  features?: string[];
+  limits?: {
+    messages_per_day?: number;
+    contexts?: number;
+    max_integrations?: number;
+    storage_gb?: number;
+    integrations?: number;
+    max_team_members?: number;
+  };
+}
+
+export interface ApiUsage {
+  messages_sent?: number;
+  contexts_created?: number;
+  total_requests?: number;
+  requests_by_type?: {
+    [key: string]: number;
+  };
+  integrations_used?: number;
+  usage_percentage?: number;
+  period_start?: string;
+  period_end?: string;
+}
+
+
+export interface BillingDetails {
+  customer_id: string;
+  payment_method?: string;
+  billing_email: string;
+}
 
 interface SubscriptionState {
   currentTier: SubscriptionTier | null;
@@ -29,7 +64,9 @@ const DEFAULT_TIER: SubscriptionTier = {
     messages_per_day: 100,
     storage_gb: 1,
     max_integrations: 1,
+    contexts: 3,
     max_team_members: 1,
+    integrations: 1
   },
 };
 
@@ -137,7 +174,7 @@ export const useSubscriptionStore = create<SubscriptionState>((set, get) => ({
         } : DEFAULT_TIER,
         usage: {
           ...usage,
-          usage_percentage: (usage.total_requests / (DEFAULT_TIER.limits.messages_per_day * 30)) * 100,
+          usage_percentage: (usage.total_requests || 0) / ((DEFAULT_TIER.limits?.messages_per_day || 100) * 30) * 100,
         },
         billingDetails: subscription,
       });

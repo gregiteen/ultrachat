@@ -18,9 +18,13 @@
     "esModuleInterop": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "vite/client": ["./node_modules/vite/client.d.ts"]
     }
   },
-  "include": ["src"],
+  "include": [
+    "src",
+    "src/vite-env.d.ts"
+  ],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

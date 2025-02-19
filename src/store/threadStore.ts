@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../lib/supabase-client';
 import type { Thread } from '../types';
 import { useMessageStore } from './messageStore';
 

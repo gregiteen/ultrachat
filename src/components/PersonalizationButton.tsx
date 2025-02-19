@@ -38,8 +38,8 @@ export function PersonalizationButton({ isActive, onToggle }: PersonalizationBut
         onClick={handleToggle}
         className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors relative ${
           isActive
-            ? 'bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted/10'
-            : 'bg-primary text-white shadow-sm hover:bg-primary/90'
+            ? 'bg-primary text-white shadow-sm hover:bg-primary/90'
+            : 'bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted/10'
         }`}
         title={isActive ? 'Disable personalization' : 'Enable personalization'}
         disabled={loading}

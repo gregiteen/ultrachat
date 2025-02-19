@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { supabase } from '../lib/supabase';
+import { supabase } from '../lib/supabase-client';
 import type { Task } from '../types';
 import { TaskExecutor } from '../lib/agents/executors/task';
 import { TaskOrchestrator } from '../lib/agents/orchestrator';
@@ -93,8 +93,8 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
       // Initialize executors
       const taskExecutor = new TaskExecutor();
-      const calendarExecutor = new CalendarExecutor({ access_token: '', expires_at: 0 }); // TODO: Get from auth
-      const gmailExecutor = new GmailExecutor({ access_token: '', expires_at: 0 }); // TODO: Get from auth
+      const calendarExecutor = new CalendarExecutor(''); // TODO: Get from auth
+      const gmailExecutor = new GmailExecutor(''); // TODO: Get from auth
       
       // Initialize orchestrator
       const orchestrator = new TaskOrchestrator(
@@ -202,8 +202,8 @@ export const useTaskStore = create<TaskState>((set, get) => ({
 
   processTaskRequest: async (request: string) => {
     const taskExecutor = new TaskExecutor();
-    const calendarExecutor = new CalendarExecutor({ access_token: '', expires_at: 0 }); // TODO: Get from auth
-    const gmailExecutor = new GmailExecutor({ access_token: '', expires_at: 0 }); // TODO: Get from auth
+    const calendarExecutor = new CalendarExecutor(''); // TODO: Get from auth
+    const gmailExecutor = new GmailExecutor(''); // TODO: Get from auth
     const model = useGeminiStore.getState().model;
     
     if (!model) throw new Error('Gemini model not initialized');

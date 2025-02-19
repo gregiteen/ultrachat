@@ -1,7 +1,7 @@
 /**
  * OAuth token refresh implementation for various services
  */
-import { supabase } from '../supabase';
+import { supabase } from '../supabase-client';
 import type { Integration } from '../../types/integration';
 
 interface TokenResponse {
