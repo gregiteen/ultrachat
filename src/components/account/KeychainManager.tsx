@@ -1,345 +1,299 @@
-import React, { useState, useEffect, ReactNode } from 'react';
-import { Lock, Key, Shield, Clock, AlertTriangle, Eye, EyeOff } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
-import CryptoJS from 'crypto-js';
+import React, { useState, useEffect } from 'react';
+import { Key, Plus, Trash2, Eye, EyeOff, Copy, Check } from 'lucide-react';
+import { useAuthStore } from '../../store/auth';
+import { useKeychainStore } from '../../store/keychainStore';
+import { useToastStore } from '../../store/toastStore';
 
-interface Credential {
-  id: string;
-  service: string;
-  encrypted_data: string;
-  encryption_iv: string;
-  last_used_at: string;
-  metadata: CredentialMetadata;
-}
-
-interface CredentialMetadata {
-  title?: string;
-  url?: string;
-  icon?: string;
-  category?: CredentialCategory;
-}
-
-type CredentialCategory = 
-  | 'communication'
-  | 'productivity'
-  | 'social'
-  | 'development'
-  | 'storage'
-  | 'media'
-  | 'database';
-
-const CATEGORIES: Record<CredentialCategory, string> = {
-  communication: 'Communication',
-  productivity: 'Productivity',
-  social: 'Social Media',
-  development: 'Development',
-  storage: 'Storage',
-  media: 'Media',
-  database: 'Database'
+type NewKeyData = { 
+  name: string; 
+  key: string; 
+  service: string; 
+  encryptedKey?: number[]; 
+  iv?: number[]; 
+  salt?: number[]; 
 };
 
-interface AuditLog {
-  id: string;
-  action: string;
-  performed_at: string;
-  ip_address: string;
-  user_agent: string;
-}
+export default function KeychainManager() {
+  const { user } = useAuthStore();
+  const { keys, loading, error, fetchKeys, addKey, deleteKey } = useKeychainStore();
+  const { showToast } = useToastStore();
+  
+  const [showNewKeyForm, setShowNewKeyForm] = useState(false);
+  const [newKey, setNewKey] = useState<NewKeyData>({ name: '', key: '', service: '' });
+  const [visibleKeys, setVisibleKeys] = useState<string[]>([]);
+  const [copiedKey, setCopiedKey] = useState<string | null>(null);
 
-export function KeychainManager() {
-  const [credentials, setCredentials] = useState<Credential[]>([]);
-  const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
-  const [selectedCredential, setSelectedCredential] = useState<string | null>(null);
-  const [showSecret, setShowSecret] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [masterKey, setMasterKey] = useState<string | null>(null);
-
-  // Load credentials
   useEffect(() => {
-    const loadCredentials = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('credentials')
-          .select('*')
-          .order('service');
+    if (user) {
+      fetchKeys();
+    }
+  }, [user, fetchKeys]);
 
-        if (error) throw error;
-        setCredentials(data || []);
-      } catch (err) {
-        setError('Failed to load credentials');
-        console.error(err);
-      } finally {
-        setLoading(false);
-      }
-    };
+  const handleAddKey = async () => {
+    if (!newKey.name || !newKey.key || !newKey.service) return;
 
-    loadCredentials();
-  }, []);
-
-  // Load audit logs
-  useEffect(() => {
-    const loadAuditLogs = async () => {
-      try {
-        const { data, error } = await supabase
-          .from('credentials_audit')
-          .select('*')
-          .order('performed_at', { ascending: false })
-          .limit(50);
-
-        if (error) throw error;
-        setAuditLogs(data || []);
-      } catch (err) {
-        console.error('Failed to load audit logs:', err);
-      }
-    };
-
-    loadAuditLogs();
-  }, []);
-
-  // Encryption/decryption functions
-  const encrypt = (data: string, key: string) => {
-    const iv = CryptoJS.lib.WordArray.random(16);
-    const encrypted = CryptoJS.AES.encrypt(data, key, {
-      iv: iv,
-      mode: CryptoJS.mode.CBC,
-      padding: CryptoJS.pad.Pkcs7
-    });
-    return {
-      encrypted: encrypted.toString(),
-      iv: iv.toString()
-    };
-  };
-
-  const decrypt = (encrypted: string, key: string, iv: string) => {
     try {
-      const decrypted = CryptoJS.AES.decrypt(encrypted, key, {
-        iv: CryptoJS.enc.Hex.parse(iv),
-        mode: CryptoJS.mode.CBC,
-        padding: CryptoJS.pad.Pkcs7
+      // Try to save to browser's password manager
+      if ('credentials' in navigator) {
+        const passwordData: PasswordCredentialData = {
+          id: newKey.service,
+          name: newKey.name,
+          password: newKey.key,
+        };
+
+        try {
+          await navigator.credentials.create({
+            password: passwordData
+          });
+        } catch (err) {
+          console.warn('Failed to save to password manager:', err);
+          // Continue even if password manager fails
+        }
+      }
+
+      await addKey({
+        name: newKey.name,
+        key: newKey.key,
+        service: newKey.service,
+        encryptedKey: [],
+        iv: [],
+        salt: []
       });
-      return decrypted.toString(CryptoJS.enc.Utf8);
+      
+      showToast({
+        message: 'Key added successfully',
+        type: 'success'
+      });
+      setNewKey({ name: '', key: '', service: '' });
+      setShowNewKeyForm(false);
     } catch (err) {
-      console.error('Decryption failed:', err);
-      return null;
+      showToast({
+        message: err instanceof Error ? err.message : 'Failed to add key',
+        type: 'error'
+      });
     }
   };
 
-  // Add new credential
-  const addCredential = async (service: string, secret: string, metadata: CredentialMetadata) => {
-    if (!masterKey) {
-      setError('Master key required');
-      return;
-    }
-
+  const handleDeleteKey = async (id: string) => {
     try {
-      const { encrypted, iv } = encrypt(secret, masterKey);
-      const { data, error } = await supabase
-        .from('credentials')
-        .insert([{
-          service,
-          encrypted_data: encrypted,
-          encryption_iv: iv,
-          metadata
-        }])
-        .select()
-        .single();
+      // Try to remove from browser's password manager
+      const key = keys.find(k => k.id === id);
+      if (key && 'credentials' in navigator) {
+        try {
+          await navigator.credentials.preventSilentAccess();
+          // Note: There's no direct way to delete credentials,
+          // but preventing silent access helps
+        } catch (err) {
+          console.warn('Failed to update password manager:', err);
+        }
+      }
 
-      if (error) throw error;
-      setCredentials([...credentials, data]);
+      await deleteKey(id);
+      showToast({
+        message: 'Key deleted successfully',
+        type: 'success'
+      });
     } catch (err) {
-      setError('Failed to add credential');
-      console.error(err);
+      showToast({
+        message: err instanceof Error ? err.message : 'Failed to delete key',
+        type: 'error'
+      });
     }
   };
 
-  // Delete credential
-  const deleteCredential = async (id: string) => {
+  const toggleKeyVisibility = (id: string) => {
+    setVisibleKeys(prev =>
+      prev.includes(id) ? prev.filter(k => k !== id) : [...prev, id]
+    );
+  };
+
+  const copyToClipboard = async (text: string, id: string) => {
     try {
-      const { error } = await supabase
-        .from('credentials')
-        .delete()
-        .eq('id', id);
-
-      if (error) throw error;
-      setCredentials(credentials.filter(c => c.id !== id));
-      setSelectedCredential(null);
+      await navigator.clipboard.writeText(text);
+      setCopiedKey(id);
+      setTimeout(() => setCopiedKey(null), 2000);
     } catch (err) {
-      setError('Failed to delete credential');
-      console.error(err);
+      console.error('Failed to copy text: ', err);
     }
   };
 
-  // Get decrypted value
-  const getDecryptedValue = (credential: Credential) => {
-    if (!masterKey) return null;
-    return decrypt(credential.encrypted_data, masterKey, credential.encryption_iv);
+  const suggestFromPasswordManager = async () => {
+    if ('credentials' in navigator) {
+      const cred = await navigator.credentials.get({ 
+        password: true,
+        mediation: 'optional'
+      });
+      if (cred && cred.type === 'password') {
+        const pwCred = cred as PasswordCredential;
+        setNewKey({ 
+          name: pwCred.name || '', 
+          key: pwCred.password, 
+          service: pwCred.id 
+        });
+      }
+    }
   };
+
+  if (!user) {
+    return (
+      <div className="flex items-center justify-center h-32">
+        <div className="text-lg text-muted-foreground">
+          Please log in to manage your keychain.
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
-      {/* Master Key Setup */}
-      {!masterKey && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-          <div className="flex items-center gap-2 text-yellow-800">
-            <AlertTriangle className="h-5 w-5" />
-            <h3 className="font-medium">Master Key Required</h3>
-          </div>
-          <p className="mt-2 text-sm text-yellow-700">
-            Enter your master key to access credentials. This key is used to encrypt/decrypt your secrets.
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-lg font-medium mb-2">API Keys & Credentials</h3>
+          <p className="text-sm text-muted-foreground">
+            Securely store and manage your API keys and credentials.
           </p>
-          <input
-            type="password"
-            className="mt-3 w-full rounded-md border px-3 py-2"
-            placeholder="Enter master key"
-            onChange={(e) => setMasterKey(e.target.value)}
-          />
+        </div>
+        {error && <div className="text-red-500 text-sm">{error}</div>}
+        <button
+          onClick={() => setShowNewKeyForm(true)}
+          className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-primary text-button-text rounded-md hover:bg-secondary transition-colors"
+        >
+          <Plus className="h-4 w-4" />
+          Add Key
+        </button>
+      </div>
+
+      {showNewKeyForm && (
+        <div className="p-4 border border-muted rounded-lg space-y-4">
+          <h4 className="text-sm font-medium mb-4">Add New Key</h4>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-2">
+                Name
+              </label>
+              <input
+                type="text"
+                value={newKey.name}
+                onChange={(e) => setNewKey({ ...newKey, name: e.target.value })}
+                className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
+                placeholder="OpenAI API Key"
+                autoComplete="username"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-foreground mb-2">
+                Service
+              </label>
+              <input
+                type="text"
+                value={newKey.service}
+                onChange={(e) => setNewKey({ ...newKey, service: e.target.value })}
+                className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
+                placeholder="OpenAI"
+              />
+            </div>
+            <div className="col-span-2">
+              <label className="block text-sm font-medium text-foreground mb-2">
+                Key
+              </label>
+              <input
+                type="password"
+                value={newKey.key}
+                onChange={(e) => setNewKey({ ...newKey, key: e.target.value })}
+                className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
+                placeholder="sk-..."
+                autoComplete="current-password"
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2 mt-4">
+            <button
+              onClick={() => setShowNewKeyForm(false)}
+              className="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={suggestFromPasswordManager}
+              className="px-4 py-2 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+              title="Use saved password"
+            >
+              Suggest
+            </button>
+            <button
+              onClick={handleAddKey}
+              disabled={loading}
+              className="px-4 py-2 text-sm font-medium bg-primary text-button-text rounded-md hover:bg-secondary transition-colors
+                disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              Save Key
+            </button>
+          </div>
         </div>
       )}
 
-      {/* Credentials Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {Object.entries(CATEGORIES).map(([category, label]) => {
-          const categoryCredentials = credentials.filter(
-            c => c.metadata?.category === category
-          );
-          
-          if (categoryCredentials.length === 0) return null;
-
-          return (
-            <div key={category} className="space-y-3">
-              <h3 className="font-medium text-gray-900">{label}</h3>
-              {categoryCredentials.map(credential => (
-                <div
-                  key={credential.id}
-                  className={`relative rounded-lg border bg-white p-4 cursor-pointer transition-all ${
-                    selectedCredential === credential.id ? 'ring-2 ring-blue-500' : ''
-                  }`}
-                  onClick={() => setSelectedCredential(
-                    selectedCredential === credential.id ? null : credential.id
-                  )}
-                >
-                  <div className="flex items-center gap-3">
-                    {credential.metadata?.icon ? (
-                      <img
-                        src={credential.metadata.icon}
-                        alt={credential.service}
-                        className="h-8 w-8"
-                      />
-                    ) : (
-                      <Key className="h-8 w-8 text-gray-400" />
-                    )}
-                    <div>
-                      <h4 className="font-medium text-gray-900">
-                        {credential.metadata?.title || credential.service}
-                      </h4>
-                      {credential.metadata?.url && (
-                        <a
-                          href={credential.metadata.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-sm text-gray-500 hover:text-gray-700"
-                          onClick={e => e.stopPropagation()}
-                        >
-                          {new URL(credential.metadata.url).hostname}
-                        </a>
-                      )}
-                    </div>
-                  </div>
-
-                  {selectedCredential === credential.id && masterKey && (
-                    <div className="mt-3 space-y-2">
-                      <div className="flex items-center gap-2">
-                        <input
-                          type={showSecret ? 'text' : 'password'}
-                          value={getDecryptedValue(credential) || ''}
-                          readOnly
-                          className="flex-1 rounded-md border bg-gray-50 px-3 py-1.5 text-sm"
-                        />
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setShowSecret(!showSecret);
-                          }}
-                          className="p-1.5 text-gray-500 hover:text-gray-700"
-                        >
-                          {showSecret ? (
-                            <EyeOff className="h-4 w-4" />
-                          ) : (
-                            <Eye className="h-4 w-4" />
-                          )}
-                        </button>
-                      </div>
-                      <div className="flex items-center justify-between text-xs text-gray-500">
-                        <div className="flex items-center gap-1">
-                          <Clock className="h-3.5 w-3.5" />
-                          Last used: {new Date(credential.last_used_at).toLocaleDateString()}
-                        </div>
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            deleteCredential(credential.id);
-                          }}
-                          className="text-red-600 hover:text-red-700"
-                        >
-                          Delete
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Audit Logs */}
-      <div className="mt-8">
-        <h3 className="font-medium text-gray-900 mb-4">Recent Activity</h3>
-        <div className="rounded-lg border bg-white overflow-hidden">
-          <table className="min-w-full divide-y divide-gray-200">
-            <thead className="bg-gray-50">
-              <tr>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Action
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Time
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  IP Address
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  User Agent
-                </th>
-              </tr>
-            </thead>
-            <tbody className="bg-white divide-y divide-gray-200">
-              {auditLogs.map(log => (
-                <tr key={log.id}>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                    {log.action}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {new Date(log.performed_at).toLocaleString()}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                    {log.ip_address}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 truncate max-w-xs">
-                    {log.user_agent}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+      {keys.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-12 px-4 border-2 border-dashed border-muted rounded-lg">
+          <Key className="h-12 w-12 text-muted-foreground mb-4" />
+          <h3 className="text-lg font-medium text-foreground mb-2">No keys yet</h3>
+          <p className="text-sm text-muted-foreground text-center max-w-sm mb-4">
+            Add your API keys and credentials to use them across the application.
+          </p>
+          <button
+            onClick={() => setShowNewKeyForm(true)}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-primary text-button-text rounded-md hover:bg-secondary transition-colors"
+          >
+            <Plus className="h-4 w-4" />
+            Add Your First Key
+          </button>
         </div>
-      </div>
-
-      {error && (
-        <div className="fixed bottom-4 right-4 bg-red-100 border border-red-200 text-red-700 px-4 py-2 rounded-lg">
-          {error}
+      ) : (
+        <div className="space-y-4">
+          {keys.map((key) => (
+            <div
+              key={key.id}
+              className="flex items-center justify-between p-4 border border-muted rounded-lg"
+            >
+              <div className="space-y-1">
+                <div className="font-medium">{key.name}</div>
+                <div className="text-sm text-muted-foreground">{key.service}</div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type={visibleKeys.includes(key.id) ? 'text' : 'password'}
+                    value={key.key}
+                    readOnly
+                    className="bg-transparent border-none text-sm font-mono p-0 focus:outline-none"
+                  />
+                  <button
+                    onClick={() => toggleKeyVisibility(key.id)}
+                    className="p-1 text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {visibleKeys.includes(key.id) ? (
+                      <EyeOff className="h-4 w-4" />
+                    ) : (
+                      <Eye className="h-4 w-4" />
+                    )}
+                  </button>
+                  <button
+                    onClick={() => copyToClipboard(key.key, key.id)}
+                    className="p-1 text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    {copiedKey === key.id ? (
+                      <Check className="h-4 w-4 text-green-500" />
+                    ) : (
+                      <Copy className="h-4 w-4" />
+                    )}
+                  </button>
+                </div>
+              </div>
+              <button
+                onClick={() => handleDeleteKey(key.id)}
+                className="p-2 text-muted-foreground hover:text-red-500 transition-colors"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
         </div>
       )}
     </div>

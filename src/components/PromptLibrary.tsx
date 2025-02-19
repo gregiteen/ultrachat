@@ -1,21 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { Folder, Search, Tag, ChevronRight, ChevronDown, Star } from 'lucide-react';
+import { Folder, Search, Tag, ChevronRight, ChevronDown, Star, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { usePromptStore } from '../store/promptStore';
 import type { Prompt, Category } from '../types/prompts';
+import { Spinner } from '../design-system/components/feedback/Spinner';
 
 export function PromptLibrary({ isOpen, onClose }: { isOpen: boolean; onClose: () => void }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [expandedCategories, setExpandedCategories] = useState<string[]>([]);
-  const { prompts, categories, loading, error, fetchPrompts, toggleFavorite } = usePromptStore();
+  const { prompts, categories, loading, error, fetchPrompts, toggleFavorite, initialized } = usePromptStore();
 
   // Fetch prompts when component mounts
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !initialized && !loading) {
       console.log('Fetching prompts...');
-      fetchPrompts();
+      fetchPrompts().catch(console.error);
     }
-  }, [isOpen, fetchPrompts]);
+  }, [isOpen, initialized, loading, fetchPrompts]);
 
   const toggleCategory = (categoryName: string) => {
     setExpandedCategories(prev => 
@@ -53,18 +54,18 @@ export function PromptLibrary({ isOpen, onClose }: { isOpen: boolean; onClose: (
       <div key={category.name} className="mb-2">
         <button
           onClick={() => toggleCategory(category.name)}
-          className={`flex items-center w-full p-2 hover:bg-gray-100 rounded-lg transition-colors ${
+          className={`flex items-center w-full p-2 hover:bg-muted/50 rounded-lg transition-colors ${
             level > 0 ? 'ml-4' : ''
           }`}
         >
           {hasSubcategories ? (
-            isExpanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />
+            isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />
           ) : (
-            <Folder size={16} className="text-gray-400" />
+            <Folder className="h-4 w-4 text-muted-foreground" />
           )}
           <span className="ml-2 text-sm">{category.name}</span>
           {categoryPrompts.length > 0 && (
-            <span className="ml-auto text-xs text-gray-500">
+            <span className="ml-auto text-xs text-muted-foreground">
               {categoryPrompts.length}
             </span>
           )}
@@ -86,7 +87,7 @@ export function PromptLibrary({ isOpen, onClose }: { isOpen: boolean; onClose: (
                 categoryPrompts.map(prompt => (
                   <div
                     key={prompt.id}
-                    className={`flex items-center p-2 hover:bg-gray-100 rounded-lg cursor-pointer ${
+                    className={`flex items-center p-2 hover:bg-muted/50 rounded-lg cursor-pointer ${
                       level > 0 ? 'ml-8' : 'ml-4'
                     }`}
                   >
@@ -96,15 +97,15 @@ export function PromptLibrary({ isOpen, onClose }: { isOpen: boolean; onClose: (
                         e.stopPropagation();
                         toggleFavorite(prompt.id);
                       }}
-                      className="p-1 hover:bg-gray-200 rounded transition-colors"
+                      className="p-1 hover:bg-muted rounded transition-colors"
                     >
-                      <Star size={14} className={prompt.favorite ? 'text-yellow-400 fill-current' : 'text-gray-400'} />
+                      <Star className={`h-4 w-4 ${prompt.favorite ? 'text-yellow-400 fill-current' : 'text-muted-foreground'}`} />
                     </button>
                     <div className="flex space-x-1 ml-2">
                       {prompt.tags.map(tag => (
                         <span
                           key={tag}
-                          className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-xs"
+                          className="px-2 py-0.5 bg-muted text-muted-foreground rounded text-xs"
                         >
                           {tag}
                         </span>
@@ -121,34 +122,62 @@ export function PromptLibrary({ isOpen, onClose }: { isOpen: boolean; onClose: (
 
   return (
     <div
-      className={`fixed inset-y-0 right-0 w-80 bg-white shadow-lg transform transition-transform duration-300 ${
+      className={`fixed inset-y-0 right-0 w-80 bg-background border-l border-muted shadow-lg transform transition-transform duration-300 ${
         isOpen ? 'translate-x-0' : 'translate-x-full'
       }`}
     >
       {/* Header */}
-      <div className="p-4 border-b">
-        <h2 className="text-lg font-semibold">Prompt Library</h2>
-        <div className="mt-2 relative">
+      <div className="p-4 border-b border-muted">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold">Prompt Library</h2>
+          <button
+            onClick={onClose}
+            className="p-2 rounded-lg hover:bg-muted transition-colors"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        <div className="relative">
           <input
             type="text"
             placeholder="Search prompts..."
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            className="w-full px-8 py-2 bg-gray-100 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+            className="w-full px-8 py-2 bg-input-background rounded-lg text-sm border border-muted focus:outline-none focus:ring-2 focus:ring-primary"
           />
-          <Search size={16} className="absolute left-2 top-3 text-gray-400" />
-          <Tag size={16} className="absolute right-2 top-3 text-gray-400" />
+          <Search className="absolute left-2 top-3 h-4 w-4 text-muted-foreground" />
+          <Tag className="absolute right-2 top-3 h-4 w-4 text-muted-foreground" />
         </div>
       </div>
 
       {/* Categories */}
       <div className="p-4 overflow-y-auto h-[calc(100vh-120px)]">
-        {loading ? (
-          <div className="text-center text-gray-500">Loading prompts...</div>
+        {!initialized || loading ? (
+          <div className="flex flex-col items-center justify-center h-full gap-4">
+            <Spinner className="h-8 w-8 text-primary" />
+            <div className="text-sm text-muted-foreground">
+              Loading prompts...
+            </div>
+          </div>
         ) : error ? (
-          <div className="text-center text-red-500">{error}</div>
+          <div className="flex flex-col items-center justify-center h-full gap-4">
+            <div className="text-sm text-destructive text-center">{error}</div>
+            <button
+              onClick={() => fetchPrompts()}
+              className="px-4 py-2 text-sm font-medium bg-primary text-white rounded-md hover:bg-primary/90 transition-colors"
+            >
+              Retry
+            </button>
+          </div>
         ) : categories.length === 0 ? (
-          <div className="text-center text-gray-500">No prompts yet</div>
+          <div className="flex flex-col items-center justify-center h-full gap-4">
+            <Folder className="h-8 w-8 text-muted-foreground" />
+            <div className="text-sm text-muted-foreground text-center">
+              No prompts available yet.
+              <br />
+              Check back later for updates.
+            </div>
+          </div>
         ) : (
           getCategoryChildren(undefined).map(category => renderCategory(category))
         )}

@@ -4,22 +4,18 @@ import LazyHighlighter from './syntax/LazyHighlighter';
 import { SearchResults } from './SearchResult';
 import { useMessageStore } from '../store/chat';
 import { useContextStore } from '../store/context';
-import { Copy, RotateCcw, ChevronLeft, ChevronRight, MessageSquare } from 'lucide-react';
+import { Copy, RotateCcw, ChevronLeft, ChevronRight, MessageSquare, Share2, Bookmark } from 'lucide-react';
 import { Spinner } from '../design-system/components/feedback/Spinner';
 import { motion } from 'framer-motion';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import type { Message, MessageVersion } from '../types';
+import { usePromptStore } from '../store/promptStore';
+import { getChatModel } from '../lib/gemini';
+import { ShareDialog } from './ShareDialog';
 
 interface MessageProps {
-  message: {
-    id: string;
-    content: string;
-    role: 'user' | 'assistant' | 'system';
-    created_at: string;
-    files?: string[];
-    versions?: string[];
-    context_id?: string;
-  };
+  message: Message;
 }
 
 interface SearchResultData {
@@ -44,14 +40,15 @@ export const ChatMessage: React.FC<MessageProps> = ({ message }) => {
   const isAssistant = message.role === 'assistant';
   const hasFiles = message.files && message.files.length > 0;
   const hasCode = message.content.includes('```');
-  const isLoading = useMessageStore(state => state.sendingMessage);
+  const isLoading = useMessageStore(state => state.loading);
   const activeContext = useContextStore(state => state.activeContext);
   const sendMessage = useMessageStore(state => state.sendMessage);
   const [currentVersion, setCurrentVersion] = useState(0);
   const [isCopied, setIsCopied] = useState<boolean>(false);
+  const [showShareDialog, setShowShareDialog] = useState(false);
   
   const versions = useMemo(() => 
-    message.versions || [message.content], 
+    message.versions?.map(v => v.content) || [message.content], 
     [message.versions, message.content]
   );
 
@@ -115,6 +112,19 @@ export const ChatMessage: React.FC<MessageProps> = ({ message }) => {
       await sendMessage(userMessage.content, userMessage.files, userMessage.context_id);
     }
   }, [isAssistant, message.id, sendMessage]);
+
+  const handleShare = useCallback(() => {
+    setShowShareDialog(true);
+  }, []);
+
+  const handleSavePrompt = useCallback(async () => {
+    try {
+      const title = await getChatModel().generateText(`Generate a concise title (max 50 chars) that describes what this prompt does: "${message.content}"\nFormat: Just return the title, nothing else.`);
+      await usePromptStore.getState().savePrompt(message.content, title);
+    } catch (error) {
+      console.error('Error saving prompt:', error);
+    }
+  }, [message.content]);
 
   const markdownComponents = useMemo(() => ({
     code({ node, inline, className, children, ...props }: any) {
@@ -196,9 +206,16 @@ export const ChatMessage: React.FC<MessageProps> = ({ message }) => {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="inline-block max-w-[80%] bg-primary text-primary-foreground rounded-[20px] rounded-tr-sm px-4 py-2"
+          className="group relative inline-block max-w-[80%] bg-primary text-primary-foreground rounded-[24px] rounded-br-lg px-4 py-2"
         >
-          <p className="whitespace-pre-wrap">{message.content}</p>
+          <p className="whitespace-pre-wrap pr-8">{message.content}</p>
+          <button
+            onClick={handleSavePrompt}
+            className="absolute right-2 top-2 p-1 text-primary-foreground/70 hover:text-primary-foreground opacity-0 group-hover:opacity-100 transition-opacity"
+            title="Save to prompt library"
+          >
+            <Bookmark className="h-4 w-4" />
+          </button>
         </motion.div>
       )}
 
@@ -207,41 +224,47 @@ export const ChatMessage: React.FC<MessageProps> = ({ message }) => {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="relative bg-muted/10 rounded-[20px] rounded-tl-sm px-4 py-2 max-w-[80%]"
+          className="relative bg-white dark:bg-muted/10 rounded-[24px] rounded-bl-lg px-4 py-2 max-w-[80%] shadow-sm"
         >
           {/* Message Controls */}
-          <div className="absolute right-4 top-4 flex items-center gap-2 bg-background/80 backdrop-blur-sm rounded-full px-2 py-1">
-            {versions.length > 1 && !isThinking && (
-              <div className="flex items-center gap-1 text-muted-foreground border-r border-muted pr-2">
-                <button
-                  onClick={() => setCurrentVersion(v => Math.max(0, v - 1))}
-                  disabled={currentVersion === 0}
-                  className="p-1 hover:text-foreground disabled:opacity-50 transition-colors"
-                  aria-label="Previous version"
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </button>
-                <span className="text-xs font-medium">
-                  {currentVersion + 1}/{versions.length}
-                </span>
-                <button
-                  onClick={() => setCurrentVersion(v => Math.min(versions.length - 1, v + 1))}
-                  disabled={currentVersion === versions.length - 1}
-                  className="p-1 hover:text-foreground disabled:opacity-50 transition-colors"
-                  aria-label="Next version"
-                >
-                  <ChevronRight className="h-4 w-4" />
-                </button>
-              </div>
-            )}
-            {!isThinking && (
-            <>
+          {!isThinking && (
+            <div className="absolute right-4 top-4 flex items-center gap-2 bg-background/80 backdrop-blur-sm rounded-full px-2 py-1">
+              {versions.length > 1 && (
+                <div className="flex items-center gap-1 text-muted-foreground border-r border-muted pr-2">
+                  <button
+                    onClick={() => setCurrentVersion(v => Math.max(0, v - 1))}
+                    disabled={currentVersion === 0}
+                    className="p-1 hover:text-foreground disabled:opacity-50 transition-colors"
+                    aria-label="Previous version"
+                  >
+                    <ChevronLeft className="h-4 w-4" />
+                  </button>
+                  <span className="text-xs font-medium">
+                    {currentVersion + 1}/{versions.length}
+                  </span>
+                  <button
+                    onClick={() => setCurrentVersion(v => Math.min(versions.length - 1, v + 1))}
+                    disabled={currentVersion === versions.length - 1}
+                    className="p-1 hover:text-foreground disabled:opacity-50 transition-colors"
+                    aria-label="Next version"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                  </button>
+                </div>
+              )}
               <button
                 onClick={handleCopy}
                 className="p-1 text-muted-foreground hover:text-foreground transition-colors"
                 title={isCopied ? 'Copied!' : 'Copy to clipboard'}
               >
                 <Copy className="h-4 w-4" />
+              </button>
+              <button
+                onClick={handleShare}
+                className="p-1 text-muted-foreground hover:text-foreground transition-colors"
+                title="Share response"
+              >
+                <Share2 className="h-4 w-4" />
               </button>
               <button
                 onClick={handleRegenerate}
@@ -251,9 +274,8 @@ export const ChatMessage: React.FC<MessageProps> = ({ message }) => {
               >
                 <RotateCcw className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`} />
               </button>
-            </>
-            )}
-          </div>
+            </div>
+          )}
 
           {/* Message Content */}
           <div className="pr-32">
@@ -302,6 +324,15 @@ export const ChatMessage: React.FC<MessageProps> = ({ message }) => {
             </div>
           ))}
         </div>
+      )}
+
+      {/* Share Dialog */}
+      {showShareDialog && (
+        <ShareDialog
+          isOpen={true}
+          onClose={() => setShowShareDialog(false)}
+          content={versions[currentVersion]}
+        />
       )}
     </div>
   );

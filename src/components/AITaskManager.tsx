@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
-import { PersonalizationChatbot } from './PersonalizationChatbot';
+import { TaskAssistant } from './TaskAssistant';
 import { TaskEditor } from './TaskEditor';
-import type { Task } from '../types';
+import type { Task } from '../types/task';
 import { useTaskStore } from '../store/task';
 
 export function AITaskManager() {
@@ -62,8 +62,7 @@ export function AITaskManager() {
           </p>
         </div>
         <div className="flex-1">
-          <PersonalizationChatbot
-            isRecording={false}
+          <TaskAssistant
             onCreateTask={() => {
               setSelectedTask(undefined);
               setShowTaskEditor(true);

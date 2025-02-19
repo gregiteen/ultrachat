@@ -45,6 +45,26 @@ export interface VoiceSettings {
   optimize_streaming_latency?: 0 | 1 | 2 | 3 | 4;
 }
 
+export interface VoiceAgent {
+  id: string;
+  voice: Voice;
+  settings: VoiceSettings;
+  personality: {
+    type: string;
+    traits: string[];
+    context: string;
+  };
+  conversation: {
+    flows: ConversationFlow[];
+    fallbacks: string[];
+  };
+}
+
+export interface ConversationFlow {
+  trigger: string;
+  response: string;
+}
+
 export interface VoiceModel {
   model_id: string;
   name: string;
@@ -86,9 +106,17 @@ export interface UserSubscription {
   can_extend_character_limit: boolean;
 }
 
+interface RequestOptions extends RequestInit {
+  maxRetries?: number;
+  retryDelay?: number;
+  shouldRetry?: (error: any) => boolean;
+}
+
 class ElevenLabsAPI {
   private apiKey: string;
   private activeStreams: Map<string, ReadableStream> = new Map();
+  private voiceCache: Map<string, Voice> = new Map();
+  private settingsCache: Map<string, VoiceSettings> = new Map();
 
   constructor() {
     this.apiKey = import.meta.env.VITE_ELEVENLABS_API_KEY || '';
@@ -97,18 +125,46 @@ class ElevenLabsAPI {
     }
   }
 
+  private async retryRequest<T>(
+    url: string,
+    options: RequestOptions
+  ): Promise<Response> {
+    const {
+      maxRetries = 3,
+      retryDelay = 1000,
+      shouldRetry = (error) => error.status >= 500,
+      ...fetchOptions
+    } = options;
+
+    let lastError: any;
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const response = await fetch(url, fetchOptions);
+        if (response.ok || !shouldRetry(response)) {
+          return response;
+        }
+        lastError = new Error(`HTTP ${response.status}: ${response.statusText}`);
+      } catch (error) {
+        lastError = error;
+      }
+      if (attempt < maxRetries - 1) {
+        await new Promise(resolve => setTimeout(resolve, retryDelay * Math.pow(2, attempt)));
+      }
+    }
+    throw lastError;
+  }
+
   private async request<T>(
     endpoint: string,
-    options: RequestInit = {}
+    options: RequestOptions = {}
   ): Promise<T> {
     const url = `${ELEVENLABS_API_URL}${endpoint}`;
     const headers = {
       'xi-api-key': this.apiKey,
       ...options.headers,
     };
-
-    const response = await fetch(url, { ...options, headers });
     
+    const response = await this.retryRequest(url, { ...options, headers });
     if (!response.ok) {
       const error = await response.json().catch(() => null);
       throw new Error(
@@ -130,7 +186,15 @@ class ElevenLabsAPI {
   }
 
   async getVoiceById(voiceId: string): Promise<Voice> {
-    return this.request<Voice>(`/voices/${voiceId}`);
+    // Check cache first
+    const cachedVoice = this.voiceCache.get(voiceId);
+    if (cachedVoice) {
+      return cachedVoice;
+    }
+
+    const voice = await this.request<Voice>(`/voices/${voiceId}`);
+    this.voiceCache.set(voiceId, voice);
+    return voice;
   }
 
   async getDefaultVoiceSettings(): Promise<VoiceSettings> {
@@ -156,6 +220,13 @@ class ElevenLabsAPI {
 
     const { text, voice_id, voice_settings, model_id, output_format, stream } = request;
     
+    // Default to highest optimization for streaming
+    const optimizedSettings = {
+      ...voice_settings,
+      optimize_streaming_latency: stream ? 4 : undefined,
+      use_speaker_boost: true,
+    };
+
     if (stream) {
       const response = await fetch(`${ELEVENLABS_API_URL}/text-to-speech/${voice_id}/stream`, {
         method: 'POST',
@@ -165,7 +236,7 @@ class ElevenLabsAPI {
         },
         body: JSON.stringify({
           text,
-          voice_settings: voice_settings || await this.getDefaultVoiceSettings(),
+          voice_settings: optimizedSettings || await this.getDefaultVoiceSettings(),
           model_id,
           output_format,
         }),
@@ -191,7 +262,7 @@ class ElevenLabsAPI {
       },
       body: JSON.stringify({
         text,
-        voice_settings: voice_settings || await this.getDefaultVoiceSettings(),
+        voice_settings: optimizedSettings || await this.getDefaultVoiceSettings(),
         model_id,
         output_format,
       }),
@@ -278,7 +349,15 @@ class ElevenLabsAPI {
   }
 
   async getVoiceSettings(voiceId: string): Promise<VoiceSettings> {
-    return this.request<VoiceSettings>(`/voices/${voiceId}/settings`);
+    // Check cache first
+    const cachedSettings = this.settingsCache.get(voiceId);
+    if (cachedSettings) {
+      return cachedSettings;
+    }
+
+    const settings = await this.request<VoiceSettings>(`/voices/${voiceId}/settings`);
+    this.settingsCache.set(voiceId, settings);
+    return settings;
   }
 
   async editVoiceSettings(
@@ -290,7 +369,7 @@ class ElevenLabsAPI {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify(settings),
+      body: JSON.stringify(settings)
     });
   }
 
@@ -359,6 +438,72 @@ class ElevenLabsAPI {
     return this.request<VoiceSample>(`/voices/${voiceId}/samples/add`, {
       method: 'POST',
       body: formData,
+    });
+  }
+
+  // Voice Agent Methods
+  private agents: Map<string, VoiceAgent> = new Map();
+
+  async createVoiceAgent(
+    voice: Voice,
+    personality: VoiceAgent['personality'],
+    conversation: VoiceAgent['conversation']
+  ): Promise<VoiceAgent> {
+    const settings = await this.getVoiceSettings(voice.id);
+    
+    const agent: VoiceAgent = {
+      id: `agent_${Date.now()}`,
+      voice,
+      settings: {
+        ...settings,
+        stability: 0.85, // Higher stability for consistent agent responses
+        similarity_boost: 0.85, // Higher similarity for consistent voice
+        use_speaker_boost: true,
+      },
+      personality,
+      conversation,
+    };
+
+    this.agents.set(agent.id, agent);
+    return agent;
+  }
+
+  async getVoiceAgent(agentId: string): Promise<VoiceAgent | undefined> {
+    return this.agents.get(agentId);
+  }
+
+  async agentSpeak(
+    agentId: string,
+    text: string,
+    stream: boolean = true
+  ): Promise<Blob | ReadableStream> {
+    const agent = await this.getVoiceAgent(agentId);
+    if (!agent) {
+      throw new Error(`Voice agent ${agentId} not found`);
+    }
+
+    // Process text through conversation flows
+    let processedText = text;
+    for (const flow of agent.conversation.flows) {
+      if (text.toLowerCase().includes(flow.trigger.toLowerCase())) {
+        processedText = flow.response;
+        break;
+      }
+    }
+
+    // If no flow matched and text is empty, use a fallback
+    if (!processedText && agent.conversation.fallbacks.length > 0) {
+      processedText = agent.conversation.fallbacks[
+        Math.floor(Math.random() * agent.conversation.fallbacks.length)
+      ];
+    }
+
+    return this.textToSpeech({
+      text: processedText,
+      voice_id: agent.voice.id,
+      voice_settings: agent.settings,
+      stream,
+      output_format: 'mp3_44100_128',
     });
   }
 }

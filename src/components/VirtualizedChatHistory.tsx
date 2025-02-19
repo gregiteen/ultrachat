@@ -1,15 +1,15 @@
 import React, { useEffect, useMemo } from 'react';
 import { Virtuoso } from 'react-virtuoso';
-import { useThreadStore } from '../store/chat';
+import { useThreadStore } from '../store/threadStore';
 import { motion } from 'framer-motion';
-import { MessageSquare, Star, Trash2 } from 'lucide-react';
+import { MessageSquare, Star, Trash2, Plus } from 'lucide-react';
 
 interface VirtualizedChatHistoryProps {
   onThreadSelect?: () => void;
 }
 
 export function VirtualizedChatHistory({ onThreadSelect }: VirtualizedChatHistoryProps) {
-  const { threads, currentThread, fetchThreads, selectThread, deleteThread, pinThread } = useThreadStore();
+  const { threads, currentThread, fetchThreads, selectThread, deleteThread, pinThread, createThread } = useThreadStore();
 
   useEffect(() => {
     fetchThreads();
@@ -28,6 +28,16 @@ export function VirtualizedChatHistory({ onThreadSelect }: VirtualizedChatHistor
   const handleDeleteThread = async (e: React.MouseEvent, threadId: string) => {
     e.stopPropagation();
     await deleteThread(threadId);
+  };
+
+  const handleNewChat = async () => {
+    try {
+      const newThread = await createThread();
+      await selectThread(newThread.id);
+    } catch (error) {
+      console.error('Error creating new thread:', error);
+    }
+    onThreadSelect?.();
   };
 
   // Group threads by date with memoization
@@ -114,29 +124,54 @@ export function VirtualizedChatHistory({ onThreadSelect }: VirtualizedChatHistor
   );
 
   return (
-    <Virtuoso
-      style={{ height: '100%' }}
-      totalCount={sortedDates.length}
-      itemContent={(index) => {
-        const date = sortedDates[index];
-        const dateThreads = groupedThreads[date];
-        return (
-          <div key={`date-group-${date}`} className="space-y-1 px-2">
-            <div className="sticky top-0 bg-background/95 backdrop-blur-sm z-10 py-2">
-              <h3 className="text-xs font-medium text-muted-foreground px-3">
-                {date === new Date().toLocaleDateString()
-                  ? 'Today'
-                  : date === new Date(Date.now() - 86400000).toLocaleDateString()
-                  ? 'Yesterday'
-                  : date}
-              </h3>
-            </div>
-            <div className="space-y-1">
-              {dateThreads.map(thread => renderThread(thread, date))}
-            </div>
+    <div className="flex flex-col h-full">
+      {/* New Chat Button */}
+      <div className="p-4 border-b border-muted">
+        <button
+          onClick={handleNewChat}
+          className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-primary text-white hover:bg-primary/90 transition-colors"
+        >
+          <Plus className="h-5 w-5" />
+          <span>New Chat</span>
+        </button>
+      </div>
+
+      {/* Thread List */}
+      {sortedDates.length === 0 ? (
+        <div className="flex-1 flex items-center justify-center p-4">
+          <div className="text-center text-muted-foreground">
+            <p className="mb-2">No conversations yet</p>
+            <p className="text-sm">Click New Chat to get started</p>
           </div>
-        );
-      }}
-    />
+        </div>
+      ) : (
+        <div className="flex-1 overflow-hidden">
+          <Virtuoso
+            style={{ height: '100%' }}
+            totalCount={sortedDates.length}
+            itemContent={(index) => {
+              const date = sortedDates[index];
+              const dateThreads = groupedThreads[date];
+              return (
+                <div key={`date-group-${date}`} className="space-y-1 px-2">
+                  <div className="sticky top-0 bg-background/95 backdrop-blur-sm z-10 py-2">
+                    <h3 className="text-xs font-medium text-muted-foreground px-3">
+                      {date === new Date().toLocaleDateString()
+                        ? 'Today'
+                        : date === new Date(Date.now() - 86400000).toLocaleDateString()
+                        ? 'Yesterday'
+                        : date}
+                    </h3>
+                  </div>
+                  <div className="space-y-1">
+                    {dateThreads.map(thread => renderThread(thread, date))}
+                  </div>
+                </div>
+              );
+            }}
+          />
+        </div>
+      )}
+    </div>
   );
 }

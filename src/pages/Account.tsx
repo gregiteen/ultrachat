@@ -1,12 +1,14 @@
-import React, { useState } from 'react';
+import React, { useState, lazy, Suspense } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../design-system/components/base/Tabs';
-import { PersonalizationPanel } from '../components/account/PersonalizationPanel';
-import { IntegrationsPanel } from '../components/account/IntegrationsPanel';
-import { SubscriptionPanel } from '../components/account/SubscriptionPanel';
-import { ThemePanel } from '../components/account/ThemePanel';
-import { KeychainManager } from '../components/account/KeychainManager';
-import { ClipboardMonitor } from '../components/account/ClipboardMonitor';
+import { Spinner } from '../design-system/components/feedback/Spinner';
 import { Lock, Palette, Plug2, Sparkles, CreditCard } from 'lucide-react';
+import { ErrorBoundary } from '../components/ErrorBoundary';
+
+const PersonalizationPanel = lazy(() => import('../components/account/PersonalizationPanel'));
+const IntegrationsPanel = lazy(() => import('../components/account/IntegrationsPanel'));
+const SubscriptionPanel = lazy(() => import('../components/account/SubscriptionPanel'));
+const ThemePanel = lazy(() => import('../components/account/ThemePanel'));
+const KeychainManager = lazy(() => import('../components/account/KeychainManager'));
 
 export default function Account() {
   const [activeTab, setActiveTab] = useState('personalization');
@@ -14,9 +16,6 @@ export default function Account() {
   return (
     <div className="container mx-auto px-4 py-8">
       <h1 className="text-2xl font-bold text-gray-900 mb-8">Account Settings</h1>
-
-      {/* Always render ClipboardMonitor to enable API key detection */}
-      <ClipboardMonitor />
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
         <TabsList className="mb-8">
@@ -42,25 +41,41 @@ export default function Account() {
           </TabsTrigger>
         </TabsList>
 
-        <TabsContent value="personalization">
-          <PersonalizationPanel />
-        </TabsContent>
+        <ErrorBoundary>
+          <Suspense fallback={
+            <div className="flex items-center justify-center h-64">
+              <Spinner className="h-8 w-8 text-primary" />
+            </div>
+          }>
+            <TabsContent value="personalization">
+              {activeTab === 'personalization' && (
+                <ErrorBoundary>
+                  <PersonalizationPanel />
+                </ErrorBoundary>
+              )}
+            </TabsContent>
 
-        <TabsContent value="integrations">
-          <IntegrationsPanel />
-        </TabsContent>
+            <TabsContent value="integrations">
+              {activeTab === 'integrations' && (
+                <ErrorBoundary>
+                  <IntegrationsPanel />
+                </ErrorBoundary>
+              )}
+            </TabsContent>
 
-        <TabsContent value="keychain">
-          <KeychainManager />
-        </TabsContent>
+            <TabsContent value="keychain">
+              {activeTab === 'keychain' && (
+                <ErrorBoundary>
+                  <KeychainManager />
+                </ErrorBoundary>
+              )}
+            </TabsContent>
 
-        <TabsContent value="theme">
-          <ThemePanel />
-        </TabsContent>
-
-        <TabsContent value="subscription">
-          <SubscriptionPanel />
-        </TabsContent>
+            <TabsContent value="theme">
+              {activeTab === 'theme' && <ThemePanel />}
+            </TabsContent>
+          </Suspense>
+        </ErrorBoundary>
       </Tabs>
     </div>
   );

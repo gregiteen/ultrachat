@@ -10,7 +10,11 @@ interface ThreadState {
   error: string | null;
   initialized: boolean;
   pendingOperations: Set<string>;
+  hasMore: boolean;
+  lastFetchedPage: number;
+  cache: Map<string, Thread>;
   fetchThreads: () => Promise<void>;
+  loadMoreThreads: () => Promise<void>;
   createThread: () => Promise<Thread>;
   selectThread: (threadId: string) => Promise<void>;
   renameThread: (threadId: string, title: string) => Promise<void>;
@@ -19,7 +23,7 @@ interface ThreadState {
   batchUpdateThreads: (updates: Partial<Thread>[]) => Promise<void>;
 }
 
-const BATCH_SIZE = 50;
+const BATCH_SIZE = 20; // Reduced from 50 to improve initial load time
 
 export const useThreadStore = create<ThreadState>((set, get) => {
   // Helper to handle optimistic updates
@@ -56,54 +60,120 @@ export const useThreadStore = create<ThreadState>((set, get) => {
     error: null,
     initialized: false,
     pendingOperations: new Set(),
+    hasMore: true,
+    lastFetchedPage: 0,
+    cache: new Map(),
 
     fetchThreads: async () => {
+      const state = get();
       set({ loading: true, error: null });
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) {
-          set({ loading: false, error: 'Please sign in to view your conversations.' });
+          set({ 
+            loading: false, 
+            error: null,
+            initialized: true,
+            threads: [],
+            hasMore: false,
+            lastFetchedPage: 0
+          });
           return;
         }
 
-        let allThreads: Thread[] = [];
-        let lastId: string | null = null;
+        // Fetch first batch of threads
+        let { data, error } = await supabase
+          .from('threads')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('pinned', { ascending: false })
+          .order('created_at', { ascending: false })
+          .limit(BATCH_SIZE);
 
-        // Fetch threads in batches
-        while (true) {
-          const query = supabase
-            .from('threads')
-            .select('id, title, user_id, pinned, created_at, updated_at')
-            .eq('user_id', user.id)
-            .order('pinned', { ascending: false })
-            .order('updated_at', { ascending: false })
-            .limit(BATCH_SIZE);
-
-          if (lastId) {
-            query.gt('id', lastId);
+        if (error) {
+          // If table doesn't exist yet, just use empty array
+          if (error.message?.includes('does not exist')) {
+            set({ threads: [], initialized: true, loading: false });
+            return;
           }
+          throw error;
+        }
 
-          const { data, error } = await query;
-
-          if (error) throw error;
-          if (!data || data.length === 0) break;
-
-          allThreads = [...allThreads, ...data];
-          lastId = data[data.length - 1].id;
-
-          if (data.length < BATCH_SIZE) break;
+        // Cache threads
+        const cache = new Map<string, Thread>();
+        data?.forEach(thread => cache.set(thread.id, thread as Thread));
+        
+        // Create initial thread if needed
+        let threads = data || [];
+        if (threads.length === 0) {
+          const newThread = await get().createThread().catch(error => {
+            console.error('Error creating initial thread:', error);
+            return null;
+          });
+          
+          if (newThread) {
+            threads = [newThread];
+            cache.set(newThread.id, newThread);
+          }
+          
         }
 
         set({ 
-          threads: allThreads,
+          threads: data || [],
+          currentThread: data?.[0] || null,
           loading: false,
-          initialized: true
+          initialized: true,
+          error: null,
+          hasMore: threads.length === BATCH_SIZE,
+          lastFetchedPage: 1,
+          cache
         });
       } catch (error) {
         console.error('Error loading threads:', error);
         set({ 
           error: error instanceof Error ? error.message : 'Failed to load conversations',
-          loading: false 
+          loading: false,
+          initialized: true,
+          threads: [],
+          hasMore: false,
+          lastFetchedPage: 0
+        });
+      }
+    },
+
+    loadMoreThreads: async () => {
+      const state = get();
+      if (!state.hasMore || state.loading) return;
+
+      set({ loading: true, error: null });
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const { data, error } = await supabase
+          .from('threads')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('pinned', { ascending: false })
+          .order('created_at', { ascending: false })
+          .range(state.lastFetchedPage * BATCH_SIZE, (state.lastFetchedPage + 1) * BATCH_SIZE - 1);
+
+        if (error) throw error;
+
+        // Update cache
+        data?.forEach(thread => state.cache.set(thread.id, thread as Thread));
+
+        set({ 
+          threads: [...state.threads, ...(data || [])],
+          loading: false,
+          hasMore: (data?.length || 0) === BATCH_SIZE,
+          lastFetchedPage: state.lastFetchedPage + 1
+        });
+      } catch (error) {
+        console.error('Error loading more threads:', error);
+        set({ 
+          error: error instanceof Error ? error.message : 'Failed to load more conversations',
+          loading: false
         });
       }
     },
@@ -111,19 +181,29 @@ export const useThreadStore = create<ThreadState>((set, get) => {
     createThread: async () => {
       set({ loading: true, error: null });
       const threadId = crypto.randomUUID();
+      
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        throw new Error('Please sign in to create a new chat');
+      }
+      
       const newThread: Thread = {
         id: threadId,
         title: 'New Chat',
         pinned: false,
+        personalization_enabled: false,
+        search_enabled: false,
+        tools_used: [],
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-        user_id: (await supabase.auth.getUser()).data.user?.id || ''
+        user_id: user.id
       };
 
       // Optimistic update
       set(state => ({
         threads: [newThread, ...state.threads],
-        currentThread: newThread
+        currentThread: newThread, // Set as current thread
+        cache: state.cache.set(threadId, newThread)
       }));
 
       try {
@@ -136,16 +216,27 @@ export const useThreadStore = create<ThreadState>((set, get) => {
         if (error) throw error;
         if (!data) throw new Error('Failed to create thread');
 
-        set({ loading: false });
-        return data as Thread;
+        const thread = data as Thread;
+
+        // Update state with server data and ensure it's selected
+        set(state => ({
+          loading: false,
+          threads: [thread, ...state.threads.filter(t => t.id !== threadId)],
+          currentThread: thread,
+          cache: state.cache.set(threadId, thread)
+        }));
+        return thread;
       } catch (error) {
         // Revert optimistic update
-        set(state => ({
-          threads: state.threads.filter(t => t.id !== threadId),
-          currentThread: state.currentThread?.id === threadId ? null : state.currentThread,
-          error: error instanceof Error ? error.message : 'Failed to create new chat',
-          loading: false
-        }));
+        set(state => {
+          state.cache.delete(threadId);
+          return {
+            threads: state.threads.filter(t => t.id !== threadId),
+            currentThread: state.currentThread?.id === threadId ? null : state.currentThread,
+            error: error instanceof Error ? error.message : 'Failed to create new chat',
+            loading: false
+          };
+        });
         throw error;
       }
     },
@@ -156,25 +247,32 @@ export const useThreadStore = create<ThreadState>((set, get) => {
       return trackOperation(threadId, async () => {
         set({ loading: true, error: null });
         try {
-          const thread = get().threads.find(t => t.id === threadId);
-          if (!thread) {
-            const { data, error } = await supabase
-              .from('threads')
-              .select('id, title, user_id, pinned, created_at, updated_at')
-              .eq('id', threadId)
-              .single();
-
-            if (error) throw error;
-            if (!data) throw new Error('Thread not found');
-            
-            set({ 
-              currentThread: data as Thread,
-              threads: [data as Thread, ...get().threads],
-              loading: false 
-            });
-          } else {
-            set({ currentThread: thread, loading: false });
+          // Check cache first
+          const cachedThread = get().cache.get(threadId);
+          if (cachedThread) {
+            set({ currentThread: cachedThread, loading: false });
+            return;
           }
+
+          // Fetch from API if not in cache
+          const { data, error } = await supabase
+            .from('threads')
+            .select('*')
+            .eq('id', threadId)
+            .single();
+
+          if (error) throw error;
+          if (!data) throw new Error('Thread not found');
+          
+          // Update cache and state
+          set(state => {
+            state.cache.set(threadId, data as Thread);
+            return { 
+              currentThread: data as Thread,
+              threads: [data as Thread, ...state.threads],
+              loading: false 
+            };
+          });
         } catch (error) {
           console.error('Error selecting thread:', error);
           set({ 
@@ -207,6 +305,8 @@ export const useThreadStore = create<ThreadState>((set, get) => {
           if (error) throw error;
           if (!data) throw new Error('Failed to rename thread');
 
+          // Update cache
+          get().cache.set(threadId, data as Thread);
           set({ loading: false });
         } catch (error) {
           // Revert optimistic update
@@ -246,6 +346,8 @@ export const useThreadStore = create<ThreadState>((set, get) => {
           if (error) throw error;
           if (!data) throw new Error('Failed to pin thread');
 
+          // Update cache
+          get().cache.set(threadId, data as Thread);
           set({ loading: false });
         } catch (error) {
           // Revert optimistic update
@@ -287,18 +389,22 @@ export const useThreadStore = create<ThreadState>((set, get) => {
 
           if (threadError) throw threadError;
 
-          // Clear messages from store
+          // Clear messages from store and cache
           useMessageStore.getState().clearThreadMessages(threadId);
+          get().cache.delete(threadId);
           set({ loading: false });
         } catch (error) {
           // Revert optimistic update
           if (deletedThread) {
-            set(state => ({
-              threads: [...state.threads, deletedThread],
-              currentThread: state.currentThread?.id === threadId ? deletedThread : state.currentThread,
-              error: error instanceof Error ? error.message : 'Failed to delete conversation',
-              loading: false
-            }));
+            set(state => {
+              state.cache.set(threadId, deletedThread);
+              return {
+                threads: [...state.threads, deletedThread],
+                currentThread: state.currentThread?.id === threadId ? deletedThread : state.currentThread,
+                error: error instanceof Error ? error.message : 'Failed to delete conversation',
+                loading: false
+              };
+            });
           }
           console.error('Error deleting thread:', error);
         }
@@ -322,12 +428,18 @@ export const useThreadStore = create<ThreadState>((set, get) => {
           
           return trackOperation(update.id, async () => {
             try {
-              const { error } = await supabase
+              const { data, error } = await supabase
                 .from('threads')
                 .update(update)
-                .eq('id', update.id);
+                .eq('id', update.id)
+                .select()
+                .single();
 
               if (error) throw error;
+              if (data) {
+                // Update cache
+                get().cache.set(update.id!, data as Thread);
+              }
             } catch (error) {
               // Revert optimistic update for this thread
               const originalThread = get().threads.find(t => t.id === update.id);

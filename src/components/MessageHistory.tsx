@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { useMessageStore, useThreadStore } from '../store/chat';
+import { useMessageStore } from '../store/messageStore';
+import { useThreadStore } from '../store/threadStore';
 import { QuoteSpinner } from './QuoteSpinner';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -12,8 +13,9 @@ import { useToastStore } from '../store/toastStore';
 import { useAudioStore } from '../store/audioStore';
 import type { Message, MessageVersion } from '../types';
 import { ShareDialog } from './ShareDialog';
+import { getChatModel } from '../lib/gemini';
 
-const MINIMUM_SPINNER_DURATION = 3000; // 3 seconds minimum for the spinner
+const MINIMUM_SPINNER_DURATION = 500; // 0.5 seconds minimum for the spinner
 
 export function MessageHistory(): JSX.Element {
   const { messages, loading, error, fetchMessages, regenerateResponse, switchMessageVersion, sendMessage } = useMessageStore();
@@ -36,6 +38,15 @@ export function MessageHistory(): JSX.Element {
     }
   }, [messages]);
 
+  // Load messages when thread changes
+  useEffect(() => {
+    if (currentThread?.id) {
+      fetchMessages(currentThread.id).catch(error => {
+        console.error('Error fetching messages:', error);
+      });
+    }
+  }, [currentThread?.id, fetchMessages]);
+
   // Handle spinner timing
   useEffect(() => {
     if (loading) {
@@ -56,47 +67,51 @@ export function MessageHistory(): JSX.Element {
     };
   }, [loading]);
 
-  // Track streaming progress
-  useEffect(() => {
-    const lastMessage = messages[messages.length - 1];
-    if (lastMessage?.role === 'assistant') {
-      setStreamingMessageId(lastMessage.id);
-      setStreamProgress(0);
-      
-      const totalLength = lastMessage.content.length;
-      const interval = setInterval(() => {
-        setStreamProgress(prev => Math.min(prev + (totalLength / 50), totalLength));
-      }, 50);
-
-      return () => clearInterval(interval);
-    }
-    setStreamingMessageId(null);
-  }, [messages]);
-
   // Handle response actions
   const handleCopy = async (content: string) => {
     await navigator.clipboard.writeText(content);
-    showToast('Copied to clipboard!', 'success');
+    showToast({ message: 'Copied to clipboard!', type: 'success' });
   };
 
   const handleShare = (content: string) => {
     setShareDialogContent(content);
-    showToast('Share dialog opened', 'info');
+    showToast({ message: 'Share dialog opened', type: 'info' });
+  };
+
+  const generatePromptTitle = async (content: string): Promise<string> => {
+    try {
+      const model = getChatModel();
+      const result = await model.generateText(
+        `Generate a concise title (max 50 chars) that describes what this prompt does: "${content}"\n` +
+        `Format: Just return the title, nothing else.`
+      );
+      const title = result.trim();
+      return title.length > 50 ? title.slice(0, 47) + '...' : title;
+    } catch (error) {
+      console.error('Error generating title:', error);
+      return content.split('\n')[0].slice(0, 47) + '...';
+    }
   };
 
   const handleSavePrompt = async (content: string) => {
     try {
-      const title = content.split('\n')[0].slice(0, 50).trim();
-      await savePrompt(content, title);
-      showToast('Prompt saved to library!', 'success');
+      // Get metadata from current context
+      const metadata = {
+        assistant: currentThread?.context_id,
+        personalization: currentThread?.personalization_enabled,
+        search: currentThread?.search_enabled,
+        tools: currentThread?.tools_used
+      };
+      
+      const title = await generatePromptTitle(content);
+      await savePrompt(content, title, metadata);
+      showToast({ message: 'Prompt saved to library!', type: 'success' });
     } catch (error) {
       console.error('Error saving prompt:', error);
-      showToast(
-        error instanceof Error 
-          ? error.message 
-          : 'Failed to save prompt',
-        'error'
-      );
+      showToast({ 
+        message: error instanceof Error ? error.message : 'Failed to save prompt',
+        type: 'error'
+      });
     }
   };
 
@@ -105,12 +120,12 @@ export function MessageHistory(): JSX.Element {
       // If this message is currently playing, stop it
       // Don't allow TTS if voice volume is muted
       if (voiceVolume === 0) {
-        showToast('Voice volume is muted', 'info');
+        showToast({ message: 'Voice volume is muted', type: 'info' });
         return;
       }
       if (currentVoice?.id === message.id) {
         await stopVoicePlayback(message.id);
-        showToast('Stopped reading', 'info');
+        showToast({ message: 'Stopped reading', type: 'info' });
         return;
       }
 
@@ -121,22 +136,20 @@ export function MessageHistory(): JSX.Element {
 
       // Start playing this message
       await playTextToSpeech(message.content, message.id);
-      showToast('Reading message aloud', 'success');
+      showToast({ message: 'Reading message aloud', type: 'success' });
 
     } catch (error) {
       console.error('Error playing text-to-speech:', error);
-      showToast(
-        error instanceof Error 
-          ? error.message 
-          : 'Failed to play text-to-speech',
-        'error'
-      );
+      showToast({ 
+        message: error instanceof Error ? error.message : 'Failed to play text-to-speech',
+        type: 'error'
+      });
     }
   };
 
   const handleSearchResubmit = async (message: Message) => {
     try {
-      showToast('Resubmitting with search...', 'info');
+      showToast({ message: 'Resubmitting with search...', type: 'info' });
       
       // Get the original user message that prompted this response
       const prevMessage = messages[messages.findIndex(m => m.id === message.id) - 1];
@@ -153,17 +166,16 @@ export function MessageHistory(): JSX.Element {
       );
     } catch (error) {
       console.error('Error resubmitting with search:', error);
-      showToast(
-        error instanceof Error 
-          ? error.message 
-          : 'Failed to resubmit with search',
-        'error'
-      );
+      showToast({ 
+        message: error instanceof Error ? error.message : 'Failed to resubmit with search',
+        type: 'error'
+      });
     }
   };
 
-  const getCurrentVersion = (message: Message): number => 
-    message.versions?.find(v => v.is_current)?.version_number || message.version_count;
+  const getCurrentVersion = (message: Message): number => {
+    return message.version_count || 1;
+  };
 
   if (error) {
     return (
@@ -173,24 +185,8 @@ export function MessageHistory(): JSX.Element {
     );
   }
 
-  if (!currentThread) {
-    return (
-      <div className="h-full flex items-center justify-center text-gray-500">
-        Select a chat or start a new one
-      </div>
-    );
-  }
-
-  if (messages.length === 0 && !showSpinner) {
-    return (
-      <div className="h-full flex items-center justify-center text-gray-500">
-        No messages yet. Start a conversation!
-      </div>
-    );
-  }
-
   return (
-    <div className="h-full overflow-y-auto p-4 space-y-6">
+    <div className="flex-1 overflow-y-auto p-4 space-y-6">
       <AnimatePresence>
         {messages.map((message) => (
           <motion.div
@@ -201,11 +197,11 @@ export function MessageHistory(): JSX.Element {
             className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
           >
             <div
-              className={`max-w-3/4 rounded-2xl shadow-lg transform transition-all duration-200 hover:shadow-xl ${
+              className={`max-w-3/4 shadow-lg transform transition-all duration-200 hover:shadow-xl ${
                 message.role === 'user'
-                  ? 'bg-primary text-white ml-12'
-                  : 'bg-white mr-12'
-              }`}
+                  ? 'bg-primary text-white ml-12 rounded-[24px] rounded-br-lg'
+                  : 'bg-white mr-12 rounded-[24px] rounded-bl-lg'
+              } overflow-hidden`}
             >
               {/* Message Content */}
               <div className="p-4">
@@ -245,7 +241,7 @@ export function MessageHistory(): JSX.Element {
                         }
                       }}
                     >
-                      {message.content.slice(0, streamingMessageId === message.id ? streamProgress : undefined)}
+                      {message.content}
                     </ReactMarkdown>
                   </div>
                 )}
@@ -301,7 +297,7 @@ export function MessageHistory(): JSX.Element {
                       title="Previous version"
                       onClick={() => {
                         const currentVersion = getCurrentVersion(message);
-                        if (currentVersion > 1) {
+                        if (currentVersion > 1 && message.version_count && currentVersion <= message.version_count) {
                           switchMessageVersion(message.id, currentVersion - 1);
                         }
                       }}
@@ -313,7 +309,7 @@ export function MessageHistory(): JSX.Element {
                       className="p-1 text-gray-500 hover:text-gray-700 transition-colors"
                       onClick={() => {
                         const currentVersion = getCurrentVersion(message);
-                        if (currentVersion < message.version_count) {
+                        if (message.version_count && currentVersion < message.version_count) {
                           switchMessageVersion(message.id, currentVersion + 1);
                         }
                       }}

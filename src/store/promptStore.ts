@@ -10,7 +10,7 @@ interface PromptState {
   error: string | null;
   initialized: boolean;
   fetchPrompts: () => Promise<void>;
-  savePrompt: (content: string, title?: string) => Promise<void>;
+  savePrompt: (content: string, title?: string, metadata?: { assistant?: string; personalization?: boolean; search?: boolean; tools?: string[] }) => Promise<void>;
   updatePrompt: (id: string, updates: Partial<Prompt>) => Promise<void>;
   deletePrompt: (id: string) => Promise<void>;
   toggleFavorite: (id: string) => Promise<void>;
@@ -61,7 +61,7 @@ export const usePromptStore = create<PromptState>((set, get) => ({
     }
   },
 
-  savePrompt: async (content: string, title?: string) => {
+  savePrompt: async (content: string, title?: string, metadata?: { assistant?: string; personalization?: boolean; search?: boolean; tools?: string[] }) => {
     set({ loading: true, error: null });
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -89,7 +89,8 @@ export const usePromptStore = create<PromptState>((set, get) => ({
             interests: personalInfo.interests,
             expertise_areas: personalInfo.expertise_areas
           }
-        } : undefined
+        } : undefined,
+        metadata
       };
 
       const { data, error } = await supabase

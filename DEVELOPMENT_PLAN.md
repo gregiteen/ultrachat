@@ -3,19 +3,24 @@
 ## Recent Updates (Feb 18, 2025)
 
 ### Completed
-1. Chat Experience Improvements
+1. Message UI Improvements
+   - ✅ Oval-shaped message bubbles with proper corners
+   - ✅ User messages in blue with save to prompt library
+   - ✅ Assistant messages in white/dark with full controls
+   - ✅ Message action buttons (copy, share, regenerate)
+   - ✅ Version history navigation
+   - ✅ Follow-up suggestions
+   - ✅ File attachment support
+   - ✅ Share dialog integration
+
+2. Chat Experience Improvements
    - ✅ Streaming responses with animations
-   - ✅ Famous quotes during loading
-   - ✅ Modern message bubbles with shadows
-   - ✅ Response actions (regenerate, copy, share)
-   - ✅ Version history support
+   - ✅ AI-generated thread titles
+   - ✅ Thread metadata (personalization, search, tools)
    - ✅ Prompt library integration
-   - ✅ Share functionality with multiple integrations
-   - ✅ Personalization improvements
-   - ✅ Left drawer for chat history
-   - ✅ Right drawer for prompt library
-   - ✅ Virtualized chat history
-   - ✅ Thread pinning functionality
+   - ✅ Personalization toggle with clear/blue states
+   - ✅ Loading states with thinking spinner
+   - ✅ Thread persistence and management
 
 2. UI/UX Improvements
    - ✅ Drawer-based navigation
@@ -27,12 +32,10 @@
 
 ### In Progress
 1. Chat Experience
-   - 🔄 Response formatting improvements
+   - 🔄 Code block formatting
    - 🔄 Search result organization
    - 🔄 Prompt categorization
-   - 🔄 Share dialog enhancements
-   - 🔄 Version history UI
-   - 🔄 Animation polish
+   - 🔄 Message action tooltips
 
 2. Performance Optimization
    - 🔄 Message virtualization
@@ -85,10 +88,10 @@
 
 ### Immediate (1-2 weeks)
 1. Complete chat experience improvements
-   - Finish response formatting
+   - Polish code block formatting
    - Enhance search results
-   - Polish animations
-   - Implement version history UI
+   - Add message action tooltips
+   - Improve prompt categorization
 
 2. Performance optimization
    - Implement message virtualization
@@ -134,8 +137,8 @@
 1. Component Structure
    - Drawer-based navigation
    - Virtualized lists
-   - Streaming support
-   - Animation system
+   - Message UI components
+   - Action button system
 
 2. State Management
    - Thread pinning

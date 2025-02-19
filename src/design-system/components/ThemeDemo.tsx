@@ -41,7 +41,7 @@ function ThemeButton({ theme, isSelected, onClick }: {
   );
 }
 
-export function ThemeDemo() {
+function ThemeDemo() {
   const { theme, setTheme, allThemes, systemTheme } = useTheme();
 
   return (
@@ -184,3 +184,5 @@ export function ThemeDemo() {
     </div>
   );
 }
+
+export default ThemeDemo;

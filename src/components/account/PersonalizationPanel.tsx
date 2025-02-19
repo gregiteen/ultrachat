@@ -1,15 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { usePersonalizationStore } from '../../store/personalization';
 import { useAuthStore } from '../../store/auth';
 import { FileManager } from '../context/FileManager';
-import { PersonalizationChatbot } from '../PersonalizationChatbot';
+import { PersonalizationAssistant } from './PersonalizationAssistant';
 import { generatePersonalizationPDF } from '../../lib/pdf-generator';
-import { VoiceRecorder } from '../VoiceRecorder';
-import { MessageSquare, X, Mic, Save } from 'lucide-react';
-import type { PersonalInfo } from '../../types';
+import { Save, MessageSquare, X, FileText } from 'lucide-react';
+import type { PersonalInfo } from '../../types/personalization';
 import { supabase } from '../../lib/supabase';
+import { gemini } from '../../lib/gemini';
+import { useToastStore } from '../../store/toastStore';
+import { PersonalizationForm } from '../PersonalizationForm';
 
-export function PersonalizationPanel() {
+export default function PersonalizationPanel() {
   const { 
     personalInfo = {}, 
     loading: personalizationLoading, 
@@ -20,22 +22,15 @@ export function PersonalizationPanel() {
   } = usePersonalizationStore();
   
   const { initialized: authInitialized, user } = useAuthStore();
-  const [isRecording, setIsRecording] = useState(false);
-  const [showChatbot, setShowChatbot] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const chatButtonRef = useRef<HTMLButtonElement>(null);
 
-  // Initialize on mount if authenticated
+  // Initialize personalization store
   useEffect(() => {
-    let mounted = true;
-    if (authInitialized && user && !personalizationInitialized && !personalizationLoading) {
-      initPersonalization().catch(error => {
-        if (mounted) {
-          console.error('Failed to initialize personalization:', error);
-        }
-      });
-    }
-    return () => { mounted = false; };
-  }, [authInitialized, user, personalizationInitialized, personalizationLoading, initPersonalization]);
+    initPersonalization();
+  }, [initPersonalization]);
 
   const handleSave = async () => {
     if (isSaving || !user) return;
@@ -69,6 +64,56 @@ export function PersonalizationPanel() {
     }
   };
 
+  const generatePreferencesProfile = async () => {
+    if (isGenerating) return;
+    setIsGenerating(true);
+    try {
+      // Create a structured profile using Gemini
+      const prompt = `Please analyze the following user information and create a structured preferences profile that captures their personality, learning style, work style, and communication preferences. Format the response as a natural, well-organized document.
+
+User Information:
+${Object.entries(personalInfo)
+  .filter(([key, value]) => value && key !== 'files')
+  .map(([key, value]) => {
+    if (Array.isArray(value)) {
+      return `${key}: ${value.join(', ')}`;
+    }
+    return `${key}: ${value}`;
+  })
+  .join('\n')}
+
+Please organize this into a cohesive profile that:
+1. Summarizes their background and personality
+2. Details their learning preferences and style
+3. Explains their work approach and preferences
+4. Describes their communication style
+5. Lists their key interests and expertise areas
+6. Outlines their goals and aspirations
+
+Format the response as a natural, flowing document that captures their unique characteristics.`;
+
+      const response = await gemini.generateText(prompt);
+      
+      // Update the personalization document
+      await updatePersonalInfo({
+        ...personalInfo,
+        personalization_document: response
+      });
+
+      // Show success message
+      useToastStore.getState().showToast({
+        message: 'Preferences profile generated successfully',
+        type: 'success',
+        duration: 3000
+      });
+    } catch (error) {
+      console.error('Error generating preferences profile:', error);
+      throw error;
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
   if (!authInitialized || !user) {
     return (
       <div className="flex items-center justify-center h-32">
@@ -96,532 +141,77 @@ export function PersonalizationPanel() {
   }
 
   return (
-    <div className="space-y-8">
-      <div className="flex items-center justify-between border-b border-muted pb-4">
-        <h2 className="text-2xl font-bold text-foreground">Preferences Profile</h2>
-        <div className="flex items-center gap-4">
+    <div className="relative">
+      {/* Form Fields */}
+      <div className="space-y-8">
+        <div className="flex items-center justify-between border-b border-muted pb-4">
+          <h2 className="text-2xl font-bold text-foreground">Preferences Profile</h2>
           <button
-            onClick={handleSave}
-            disabled={isSaving || personalizationLoading}
-            className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-primary text-button-text rounded-md hover:bg-secondary transition-colors disabled:opacity-50"
+            onClick={generatePreferencesProfile}
+            disabled={isGenerating}
+            className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-primary text-button-text rounded-md hover:bg-secondary transition-colors disabled:opacity-50 mr-4"
           >
-            <Save className="h-4 w-4" />
-            {isSaving ? 'Saving...' : 'Save & View Profile'}
+            <FileText className="h-4 w-4" />
+            {isGenerating ? 'Generating...' : 'Generate Profile'}
           </button>
-          <FileManager />
-        </div>
-      </div>
 
-      {error && (
-        <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded relative" role="alert">
-          <span className="block sm:inline">{error}</span>
+          <div className="flex items-center gap-4">
+            <button
+              onClick={handleSave}
+              disabled={isSaving || personalizationLoading}
+              className="flex items-center gap-2 px-4 py-2 text-sm font-medium bg-primary text-button-text rounded-md hover:bg-secondary transition-colors disabled:opacity-50"
+            >
+              <Save className="h-4 w-4" />
+              {isSaving ? 'Saving...' : 'Save & View Profile'}
+            </button>
+            <FileManager />
+          </div>
+        </div>
+
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded relative" role="alert">
+            <span className="block sm:inline">{error}</span>
+          </div>
+        )}
+
+        <PersonalizationForm />
+      </div>
+      {/* Chat Button */}
+      <button
+        ref={chatButtonRef}
+        onClick={() => setIsChatOpen(!isChatOpen)}
+        className="fixed bottom-6 right-6 p-4 bg-primary text-button-text rounded-full shadow-lg hover:bg-secondary transition-colors z-50 group"
+      >
+        {isChatOpen ? (
+          <X className="h-6 w-6" />
+        ) : (
+          <MessageSquare className="h-6 w-6" />
+        )}
+      </button>
+      
+      {!isChatOpen && (
+        <div className="fixed bottom-20 right-6 p-2 bg-background border border-muted rounded-lg shadow-lg z-40 max-w-[200px] text-sm opacity-0 group-hover:opacity-100 transition-opacity">
+          Need help filling out your profile? Chat with Ultra, your AI assistant!
         </div>
       )}
 
-      {/* Personal Information Form */}
-      <div className="bg-card rounded-lg p-6">
-        <div className="space-y-6">
-          {/* Basic Information */}
-          <div>
-            <h4 className="text-sm font-medium text-foreground mb-4">Basic Information</h4>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="col-span-2">
-                <label className="block text-sm font-medium text-foreground mb-2">Name</label>
-                <input
-                  type="text"
-                  value={personalInfo.name || ''}
-                  onChange={(e) => updatePersonalInfo({ ...personalInfo, name: e.target.value })}
-                  className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  disabled={personalizationLoading}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Email</label>
-                <input
-                  type="email"
-                  value={personalInfo.email || ''}
-                  onChange={(e) => updatePersonalInfo({ ...personalInfo, email: e.target.value })}
-                  className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  disabled={personalizationLoading}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Phone</label>
-                <input
-                  type="tel"
-                  value={personalInfo.phone || ''}
-                  onChange={(e) => updatePersonalInfo({ ...personalInfo, phone: e.target.value })}
-                  className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  disabled={personalizationLoading}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Address */}
-          <div>
-            <h4 className="text-sm font-medium text-foreground mb-4">Address</h4>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="col-span-2">
-                <label className="block text-sm font-medium text-foreground mb-2">Street</label>
-                <input
-                  type="text"
-                  value={personalInfo.address?.street || ''}
-                  onChange={(e) => updatePersonalInfo({
-                    ...personalInfo,
-                    address: { ...personalInfo.address, street: e.target.value }
-                  })}
-                  className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  disabled={personalizationLoading}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">City</label>
-                <input
-                  type="text"
-                  value={personalInfo.address?.city || ''}
-                  onChange={(e) => updatePersonalInfo({
-                    ...personalInfo,
-                    address: { ...personalInfo.address, city: e.target.value }
-                  })}
-                  className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  disabled={personalizationLoading}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">State</label>
-                <input
-                  type="text"
-                  value={personalInfo.address?.state || ''}
-                  onChange={(e) => updatePersonalInfo({
-                    ...personalInfo,
-                    address: { ...personalInfo.address, state: e.target.value }
-                  })}
-                  className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  disabled={personalizationLoading}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">ZIP</label>
-                <input
-                  type="text"
-                  value={personalInfo.address?.zip || ''}
-                  onChange={(e) => updatePersonalInfo({
-                    ...personalInfo,
-                    address: { ...personalInfo.address, zip: e.target.value }
-                  })}
-                  className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  disabled={personalizationLoading}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Country</label>
-                <input
-                  type="text"
-                  value={personalInfo.address?.country || ''}
-                  onChange={(e) => updatePersonalInfo({
-                    ...personalInfo,
-                    address: { ...personalInfo.address, country: e.target.value }
-                  })}
-                  className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  disabled={personalizationLoading}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Professional */}
-          <div>
-            <h4 className="text-sm font-medium text-foreground mb-4">Professional Information</h4>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Job Title</label>
-                <input
-                  type="text"
-                  value={personalInfo.job || ''}
-                  onChange={(e) => updatePersonalInfo({ ...personalInfo, job: e.target.value })}
-                  className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  disabled={personalizationLoading}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Company</label>
-                <input
-                  type="text"
-                  value={personalInfo.company || ''}
-                  onChange={(e) => updatePersonalInfo({ ...personalInfo, company: e.target.value })}
-                  className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  disabled={personalizationLoading}
-                />
-              </div>
-              <div className="col-span-2">
-                <label className="block text-sm font-medium text-foreground mb-2">Projects</label>
-                <textarea
-                  value={personalInfo.projects?.join('\n') || ''}
-                  onChange={(e) => updatePersonalInfo({ ...personalInfo, projects: e.target.value.split('\n') })}
-                  className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  rows={3}
-                  disabled={personalizationLoading}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Personal Details */}
-          <div>
-            <h4 className="text-sm font-medium text-foreground mb-4">Personal Details</h4>
-            <div className="grid grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Height</label>
-                <input
-                  type="text"
-                  value={personalInfo.height || ''}
-                  onChange={(e) => updatePersonalInfo({ ...personalInfo, height: e.target.value })}
-                  className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  disabled={personalizationLoading}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Weight</label>
-                <input
-                  type="text"
-                  value={personalInfo.weight || ''}
-                  onChange={(e) => updatePersonalInfo({ ...personalInfo, weight: e.target.value })}
-                  className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  disabled={personalizationLoading}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Shoe Size</label>
-                <input
-                  type="text"
-                  value={personalInfo.shoe_size || ''}
-                  onChange={(e) => updatePersonalInfo({ ...personalInfo, shoe_size: e.target.value })}
-                  className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  disabled={personalizationLoading}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Top Size</label>
-                <input
-                  type="text"
-                  value={personalInfo.clothing_sizes?.top || ''}
-                  onChange={(e) => updatePersonalInfo({
-                    ...personalInfo,
-                    clothing_sizes: { ...personalInfo.clothing_sizes, top: e.target.value }
-                  })}
-                  className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  disabled={personalizationLoading}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Bottom Size</label>
-                <input
-                  type="text"
-                  value={personalInfo.clothing_sizes?.bottom || ''}
-                  onChange={(e) => updatePersonalInfo({
-                    ...personalInfo,
-                    clothing_sizes: { ...personalInfo.clothing_sizes, bottom: e.target.value }
-                  })}
-                  className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  disabled={personalizationLoading}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Lists */}
-          <div>
-            <h4 className="text-sm font-medium text-foreground mb-4">Interests & Preferences</h4>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Interests</label>
-                <input
-                  type="text"
-                  value={personalInfo.interests?.join(', ') || ''}
-                  onChange={(e) => updatePersonalInfo({
-                    ...personalInfo,
-                    interests: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
-                  })}
-                  className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  placeholder="What are your interests?"
-                  disabled={personalizationLoading}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Hobbies</label>
-                <input
-                  type="text"
-                  value={personalInfo.hobbies?.join(', ') || ''}
-                  onChange={(e) => updatePersonalInfo({
-                    ...personalInfo,
-                    hobbies: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
-                  })}
-                  className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  placeholder="What are your hobbies?"
-                  disabled={personalizationLoading}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Favorite Foods</label>
-                <input
-                  type="text"
-                  value={personalInfo.favorite_foods?.join(', ') || ''}
-                  onChange={(e) => updatePersonalInfo({
-                    ...personalInfo,
-                    favorite_foods: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
-                  })}
-                  className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  placeholder="What foods do you like?"
-                  disabled={personalizationLoading}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Favorite Drinks</label>
-                <input
-                  type="text"
-                  value={personalInfo.favorite_drinks?.join(', ') || ''}
-                  onChange={(e) => updatePersonalInfo({
-                    ...personalInfo,
-                    favorite_drinks: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
-                  })}
-                  className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  placeholder="What drinks do you like?"
-                  disabled={personalizationLoading}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Relationships */}
-          <div>
-            <h4 className="text-sm font-medium text-foreground mb-4">Relationships</h4>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Family</label>
-                <input
-                  type="text"
-                  value={personalInfo.family?.join(', ') || ''}
-                  onChange={(e) => updatePersonalInfo({
-                    ...personalInfo,
-                    family: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
-                  })}
-                  className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  placeholder="Tell me about your family"
-                  disabled={personalizationLoading}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Friends</label>
-                <input
-                  type="text"
-                  value={personalInfo.friends?.join(', ') || ''}
-                  onChange={(e) => updatePersonalInfo({
-                    ...personalInfo,
-                    friends: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
-                  })}
-                  className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  placeholder="Tell me about your friends"
-                  disabled={personalizationLoading}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Love Interests</label>
-                <input
-                  type="text"
-                  value={personalInfo.love_interests?.join(', ') || ''}
-                  onChange={(e) => updatePersonalInfo({
-                    ...personalInfo,
-                    love_interests: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
-                  })}
-                  className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  placeholder="Tell me about your romantic interests"
-                  disabled={personalizationLoading}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Cultural Groups</label>
-                <input
-                  type="text"
-                  value={personalInfo.cultural_groups?.join(', ') || ''}
-                  onChange={(e) => updatePersonalInfo({
-                    ...personalInfo,
-                    cultural_groups: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
-                  })}
-                  className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  placeholder="What cultural groups do you identify with?"
-                  disabled={personalizationLoading}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Identity */}
-          <div>
-            <h4 className="text-sm font-medium text-foreground mb-4">Identity & Worldview</h4>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Religion</label>
-                <input
-                  type="text"
-                  value={personalInfo.religion || ''}
-                  onChange={(e) => updatePersonalInfo({ ...personalInfo, religion: e.target.value })}
-                  className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  disabled={personalizationLoading}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Worldview</label>
-                <input
-                  type="text"
-                  value={personalInfo.worldview || ''}
-                  onChange={(e) => updatePersonalInfo({ ...personalInfo, worldview: e.target.value })}
-                  className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  disabled={personalizationLoading}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">MBTI Type</label>
-                <input
-                  type="text"
-                  value={personalInfo.mbti || ''}
-                  onChange={(e) => updatePersonalInfo({ ...personalInfo, mbti: e.target.value })}
-                  className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  disabled={personalizationLoading}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Goals & Dreams */}
-          <div>
-            <h4 className="text-sm font-medium text-foreground mb-4">Goals & Dreams</h4>
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Goals</label>
-                <input
-                  type="text"
-                  value={personalInfo.goals?.join(', ') || ''}
-                  onChange={(e) => updatePersonalInfo({
-                    ...personalInfo,
-                    goals: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
-                  })}
-                  className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  placeholder="What are your goals?"
-                  disabled={personalizationLoading}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Dreams</label>
-                <input
-                  type="text"
-                  value={personalInfo.dreams?.join(', ') || ''}
-                  onChange={(e) => updatePersonalInfo({
-                    ...personalInfo,
-                    dreams: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
-                  })}
-                  className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  placeholder="What are your dreams?"
-                  disabled={personalizationLoading}
-                />
-              </div>
-            </div>
-          </div>
-
-          {/* Health */}
-          <div>
-            <h4 className="text-sm font-medium text-foreground mb-4">Health Information</h4>
+      {/* Chat Window */}
+      {isChatOpen && (
+        <div className="fixed bottom-24 right-6 w-96 h-[600px] bg-background border border-muted shadow-lg rounded-lg overflow-hidden z-40">
+          <div className="flex items-center justify-between p-4 border-b border-muted bg-muted/50 backdrop-blur-sm">
             <div>
-              <label className="block text-sm font-medium text-foreground mb-2">Health Concerns</label>
-              <input
-                type="text"
-                value={personalInfo.health_concerns?.join(', ') || ''}
-                onChange={(e) => updatePersonalInfo({
-                  ...personalInfo,
-                  health_concerns: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
-                })}
-                className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                placeholder="Any health concerns?"
-                disabled={personalizationLoading}
-              />
+              <h3 className="text-lg font-semibold">Ultra</h3>
+              <p className="text-sm text-muted-foreground">Your AI Assistant</p>
             </div>
+            <button
+              onClick={() => setIsChatOpen(false)}
+              className="p-2 hover:bg-muted rounded-lg transition-colors"
+            >
+              <X className="h-5 w-5" />
+            </button>
           </div>
-
-          {/* Other */}
-          <div>
-            <h4 className="text-sm font-medium text-foreground mb-4">Additional Information</h4>
-            <div className="space-y-4">
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Keywords</label>
-                <input
-                  type="text"
-                  value={personalInfo.keywords?.join(', ') || ''}
-                  onChange={(e) => updatePersonalInfo({
-                    ...personalInfo,
-                    keywords: e.target.value.split(',').map(s => s.trim()).filter(Boolean)
-                  })}
-                  className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  placeholder="Any keywords that describe you?"
-                  disabled={personalizationLoading}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Backstory</label>
-                <textarea
-                  value={personalInfo.backstory || ''}
-                  onChange={(e) => updatePersonalInfo({ ...personalInfo, backstory: e.target.value })}
-                  className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  rows={4}
-                  disabled={personalizationLoading}
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">Additional Notes</label>
-                <textarea
-                  value={personalInfo.freeform || ''}
-                  onChange={(e) => updatePersonalInfo({ ...personalInfo, freeform: e.target.value })}
-                  className="w-full rounded-md border border-muted bg-input-background text-foreground px-3 py-2"
-                  rows={4}
-                  disabled={personalizationLoading}
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Floating Chat Button */}
-      <button
-        onClick={() => setShowChatbot(!showChatbot)}
-        className="fixed bottom-6 right-6 p-4 bg-primary text-button-text rounded-full shadow-lg hover:bg-secondary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        disabled={personalizationLoading}
-      >
-        <MessageSquare className="h-6 w-6" />
-      </button>
-
-      {/* Floating Chatbot */}
-      {showChatbot && (
-        <div className="fixed bottom-24 right-6 w-96 h-[600px] bg-background rounded-lg shadow-xl border border-muted overflow-hidden">
-          <div className="flex items-center justify-between p-4 border-b border-muted">
-            <h3 className="text-lg font-medium">AI Assistant</h3>
-            <div className="flex items-center gap-2">
-              <VoiceRecorder 
-                onStart={() => setIsRecording(true)} 
-                onStop={() => setIsRecording(false)}
-                className="p-2 hover:bg-muted/10 rounded-full transition-colors"
-              >
-                <Mic className="h-5 w-5" />
-              </VoiceRecorder>
-              <button
-                onClick={() => setShowChatbot(false)}
-                className="text-muted-foreground hover:text-foreground p-2 hover:bg-muted/10 rounded-full transition-colors"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-          </div>
-          <div className="h-[calc(100%-64px)]">
-            <PersonalizationChatbot isRecording={isRecording} />
+          <div className="h-[calc(100%-4rem)]">
+            <PersonalizationAssistant />
           </div>
         </div>
       )}

@@ -1,19 +1,23 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Send, Mic, Volume2, Edit, Paperclip, Image, Command, Search, HelpCircle } from 'lucide-react';
+import { Send, Mic, Volume2, Edit, Paperclip, Image, Command, Search, HelpCircle, X } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useContextStore } from '../store/context';
+import { useThreadStore } from '../store/chat';
 import type { Context } from '../types';
 import { VoiceRecorder } from './VoiceRecorder';
 import { speechRecognition } from '../lib/speech';
 import { supabase } from '../lib/supabase';
 import { Spinner } from '../design-system/components/feedback/Spinner';
+import { PersonalizationButton } from './PersonalizationButton';
 import ContextEditor from './ContextEditor';
 import { PromptLibrary } from './PromptLibrary';
 import { useAudioStore } from '../store/audioStore';
 import { usePromptStore } from '../store/promptStore';
+import { useToastStore } from '../store/toastStore';
+import { usePersonalizationStore } from '../store/personalization';
 
 interface ChatInputProps {
-  onSendMessage: (content: string, files?: string[], contextId?: string, isSystemMessage?: boolean, skipAiResponse?: boolean, forceSearch?: boolean) => Promise<void>;
+  onSendMessage: (content: string, files?: string[], contextId?: string, isSystemMessage?: boolean, skipAiResponse?: boolean, forceSearch?: boolean, metadata?: { personalization_enabled?: boolean; search_enabled?: boolean; tools_used?: string[] }) => Promise<void>;
   isLoading?: boolean;
   isVoiceToTextMode?: boolean;
   setIsVoiceToTextMode?: (value: boolean) => void;
@@ -36,7 +40,9 @@ export function ChatInput({
   disabled = false,
 }: ChatInputProps) {
   const [message, setMessage] = useState('');
-  const { contexts, activeContext, setActiveContext } = useContextStore();
+  const { contexts, activeContext, setActiveContext, initialized: contextsInitialized } = useContextStore();
+  const { initialized: threadsInitialized } = useThreadStore();
+  const { isActive, togglePersonalization } = usePersonalizationStore();
   const [showContextEditor, setShowContextEditor] = useState(false);
   const [editingContext, setEditingContext] = useState<Context | undefined>(undefined);
   const [transcribedText, setTranscribedText] = useState('');
@@ -46,10 +52,17 @@ export function ChatInput({
   const [filePaths, setFilePaths] = useState<string[]>([]);
   const [showContextMenu, setShowContextMenu] = useState(false);
   const [showPromptLibrary, setShowPromptLibrary] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const { savePrompt } = usePromptStore();
+  const { showToast } = useToastStore();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const imageInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Check if all required stores are initialized
+  const isFullyInitialized = contextsInitialized && threadsInitialized;
+  const isToggleDisabled = disabled || isUploading;
+  const isDisabled = disabled || !isFullyInitialized || isUploading;
 
   // Auto-resize textarea
   useEffect(() => {
@@ -70,39 +83,75 @@ export function ChatInput({
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files ? Array.from(e.target.files) : [];
     if (files.length > 0) {
-      const paths = await Promise.all(
-        files.map(async (file) => {
-          const filePath = `${Date.now()}-${file.name}`;
-          const { error: uploadError } = await supabase.storage
-            .from('user-uploads')
-            .upload(filePath, file);
-          if (uploadError) {
-            console.error('Upload error:', uploadError);
-            setSpeechRecognitionError(`Failed to upload ${file.name}: ${uploadError.message}`);
-            return null;
-          }
-          return filePath;
-        })
-      );
-      const successfulUploads = paths.filter((path): path is string => path !== null);
-      setFilePaths(prev => [...prev, ...successfulUploads]);
+      setIsUploading(true);
+      try {
+        const paths = await Promise.all(
+          files.map(async (file) => {
+            const filePath = `${Date.now()}-${file.name}`;
+            const { error: uploadError } = await supabase.storage
+              .from('user-uploads')
+              .upload(filePath, file);
+            if (uploadError) {
+              console.error('Upload error:', uploadError);
+              showToast({
+                message: `Failed to upload ${file.name}: ${uploadError.message}`,
+                type: 'error',
+                duration: 5000
+              });
+              return null;
+            }
+            return filePath;
+          })
+        );
+        const successfulUploads = paths.filter((path): path is string => path !== null);
+        setFilePaths(prev => [...prev, ...successfulUploads]);
+        
+        if (successfulUploads.length > 0) {
+          showToast({
+            message: `Successfully uploaded ${successfulUploads.length} file(s)`,
+            type: 'success',
+            duration: 3000
+          });
+        }
+      } catch (error) {
+        console.error('Upload error:', error);
+        showToast({
+          message: 'An unexpected error occurred while uploading files',
+          type: 'error',
+          duration: 5000
+        });
+      } finally {
+        setIsUploading(false);
+      }
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!message.trim() || isLoading || disabled) return;
+    if (!message.trim() || isLoading || isDisabled) return;
 
     const currentMessage = message;
     setMessage('');
     setTranscribedText('');
     
     try {
-      await onSendMessage(currentMessage, filePaths, activeContext?.id, false, false, isSearchMode);
+      // Update thread metadata
+      const metadata = {
+        personalization_enabled: isActive,
+        search_enabled: isSearchMode,
+        tools_used: []
+      };
+      
+      await onSendMessage(currentMessage, filePaths, activeContext?.id, false, false, isSearchMode, metadata);
       setFilePaths([]);
     } catch (error) {
-      setMessage(currentMessage);
       console.error('Failed to send message:', error);
+      setMessage(currentMessage);
+      showToast({
+        message: 'Failed to send message. Please try again.',
+        type: 'error',
+        duration: 5000
+      });
     }
   };
 
@@ -117,11 +166,23 @@ export function ChatInput({
         await playTextToSpeech(text, `voice-response-${Date.now()}`);
       } 
 
-      await onSendMessage(text, [], activeContext?.id, false, false, isSearchMode);
+      // Update thread metadata
+      const metadata = {
+        personalization_enabled: isActive,
+        search_enabled: isSearchMode,
+        tools_used: []
+      };
+
+      await onSendMessage(text, [], activeContext?.id, false, false, isSearchMode, metadata);
       setTranscribedText('');
     } catch (error) {
       console.error('Error processing voice:', error);
       setSpeechRecognitionError('Error processing voice');
+      showToast({
+        message: 'Failed to process voice recording. Please try again.',
+        type: 'error',
+        duration: 5000
+      });
     }
   };
 
@@ -140,11 +201,16 @@ export function ChatInput({
     } catch (error) {
       console.error('Error transcribing voice recording:', error);
       setSpeechRecognitionError('Error processing voice recording');
+      showToast({
+        message: 'Failed to transcribe voice recording. Please try again.',
+        type: 'error',
+        duration: 5000
+      });
     }
   };
 
   return (
-    <div className="border-t border-muted bg-background">
+    <div className="w-full max-w-4xl mx-auto">
       <AnimatePresence>
         {showContextMenu && (
           <motion.div
@@ -165,6 +231,7 @@ export function ChatInput({
                   }`}
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
+                  disabled={isDisabled}
                 >
                   {context.name}
                   <motion.button
@@ -174,6 +241,7 @@ export function ChatInput({
                     }}
                     className="absolute right-1 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 hover:text-primary transition-opacity p-1"
                     whileHover={{ scale: 1.1 }}
+                    disabled={isDisabled}
                   >
                     <Edit className="h-3 w-3" />
                   </motion.button>
@@ -184,9 +252,12 @@ export function ChatInput({
                   setEditingContext(undefined);
                   setShowContextEditor(true);
                 }}
-                className="rounded-full px-3 py-1.5 text-sm font-medium bg-muted hover:bg-muted-foreground/10 text-muted-foreground hover:text-foreground transition-colors"
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
+                className={`rounded-full px-3 py-1.5 text-sm font-medium bg-muted hover:bg-muted-foreground/10 text-muted-foreground hover:text-foreground transition-colors ${
+                  isDisabled ? 'opacity-50 cursor-not-allowed' : ''
+                }`}
+                whileHover={isDisabled ? {} : { scale: 1.02 }}
+                whileTap={isDisabled ? {} : { scale: 0.98 }}
+                disabled={isDisabled}
               >
                 + New Assistant
               </motion.button>
@@ -195,18 +266,28 @@ export function ChatInput({
         )}
       </AnimatePresence>
 
-      <form onSubmit={handleSubmit} className="p-4">
+      <form onSubmit={handleSubmit}>
         <motion.div
-          className="relative flex items-end gap-2 rounded-xl border border-muted bg-input-background p-2 shadow-sm focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/50 transition-all"
+          className={`relative flex items-end gap-2 rounded-xl border border-muted bg-input-background p-3 shadow-sm transition-all ${
+            isDisabled ? 'opacity-75' : 'focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/50'
+          }`}
         >
+          <PersonalizationButton
+            isActive={isActive}
+            onToggle={async () => {
+              await togglePersonalization();
+            }}
+          />
+
           <motion.button
             type="button"
             onClick={() => setShowContextMenu(!showContextMenu)}
             className={`flex-shrink-0 text-icon-color hover:text-icon-hover transition-colors p-2 rounded-lg ${
               showContextMenu ? 'bg-primary/10 text-primary' : ''
-            }`}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
+            } ${isDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+            whileHover={isDisabled ? {} : { scale: 1.05 }}
+            whileTap={isDisabled ? {} : { scale: 0.95 }}
+            disabled={isDisabled}
           >
             <Command className="h-5 w-5" />
           </motion.button>
@@ -218,6 +299,7 @@ export function ChatInput({
             className="hidden"
             multiple
             accept=".pdf, .txt, .md, .csv, .json, .xml, audio/*, video/*"
+            disabled={isDisabled}
           />
           <input
             type="file"
@@ -227,6 +309,7 @@ export function ChatInput({
             multiple
             accept="image/*"
             capture="environment"
+            disabled={isDisabled}
           />
 
           <div className="relative flex-1 min-w-0">
@@ -235,12 +318,14 @@ export function ChatInput({
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               placeholder={transcribedText || (isSearchMode ? "Ask a question..." : "Type a message...")}
-              className="w-full bg-transparent text-foreground placeholder:text-muted-foreground focus:outline-none py-1 px-2 resize-none overflow-hidden"
+              className={`w-full bg-transparent text-foreground placeholder:text-muted-foreground focus:outline-none py-1 px-2 resize-none overflow-hidden ${
+                isDisabled ? 'cursor-not-allowed' : ''
+              }`}
               style={{
                 minHeight: '24px',
                 maxHeight: '200px',
               }}
-              disabled={isVoiceToVoiceMode || disabled}
+              disabled={isVoiceToVoiceMode || isDisabled}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
@@ -254,23 +339,35 @@ export function ChatInput({
             <motion.button
               type="button"
               onClick={() => fileInputRef.current?.click()}
-              className={`text-icon-color hover:text-icon-hover transition-colors p-2 rounded-lg ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-              disabled={disabled}
-              whileHover={disabled ? {} : { scale: 1.05 }}
-              whileTap={disabled ? {} : { scale: 0.95 }}
+              className={`text-icon-color hover:text-icon-hover transition-colors p-2 rounded-lg ${
+                isDisabled || isUploading ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+              disabled={isDisabled || isUploading}
+              whileHover={isDisabled || isUploading ? {} : { scale: 1.05 }}
+              whileTap={isDisabled || isUploading ? {} : { scale: 0.95 }}
             >
-              <Paperclip className="h-5 w-5" />
+              {isUploading ? (
+                <Spinner className="h-5 w-5" />
+              ) : (
+                <Paperclip className="h-5 w-5" />
+              )}
             </motion.button>
 
             <motion.button
               type="button"
               onClick={() => imageInputRef.current?.click()}
-              className={`text-icon-color hover:text-icon-hover transition-colors p-2 rounded-lg ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-              disabled={disabled}
-              whileHover={disabled ? {} : { scale: 1.05 }}
-              whileTap={disabled ? {} : { scale: 0.95 }}
+              className={`text-icon-color hover:text-icon-hover transition-colors p-2 rounded-lg ${
+                isDisabled || isUploading ? 'opacity-50 cursor-not-allowed' : ''
+              }`}
+              disabled={isDisabled || isUploading}
+              whileHover={isDisabled || isUploading ? {} : { scale: 1.05 }}
+              whileTap={isDisabled || isUploading ? {} : { scale: 0.95 }}
             >
-              <Image className="h-5 w-5" />
+              {isUploading ? (
+                <Spinner className="h-5 w-5" />
+              ) : (
+                <Image className="h-5 w-5" />
+              )}
             </motion.button>
 
             <motion.button
@@ -291,10 +388,10 @@ export function ChatInput({
                 isVoiceToTextMode
                   ? 'text-primary bg-primary/10'
                   : 'text-icon-color hover:text-icon-hover'
-              } ${(isRecording || disabled) ? 'opacity-50 cursor-not-allowed' : ''}`}
-              whileHover={(isRecording || disabled) ? {} : { scale: 1.05 }}
-              whileTap={(isRecording || disabled) ? {} : { scale: 0.95 }}
-              disabled={isRecording || disabled}
+              } ${(isRecording || isDisabled) ? 'opacity-50 cursor-not-allowed' : ''}`}
+              whileHover={(isRecording || isDisabled) ? {} : { scale: 1.05 }}
+              whileTap={(isRecording || isDisabled) ? {} : { scale: 0.95 }}
+              disabled={isRecording || isDisabled}
             >
               <Mic className="h-5 w-5" />
             </motion.button>
@@ -317,10 +414,10 @@ export function ChatInput({
                 isVoiceToVoiceMode
                   ? 'text-primary bg-primary/10'
                   : 'text-icon-color hover:text-icon-hover'
-              } ${(!activeContext?.voice?.id || isRecording || disabled) ? 'opacity-50 cursor-not-allowed' : ''}`}
-              whileHover={(!activeContext?.voice?.id || isRecording || disabled) ? {} : { scale: 1.05 }}
-              whileTap={(!activeContext?.voice?.id || isRecording || disabled) ? {} : { scale: 0.95 }}
-              disabled={!activeContext?.voice?.id || isRecording || disabled}
+              } ${(!activeContext?.voice?.id || isRecording || isDisabled) ? 'opacity-50 cursor-not-allowed' : ''}`}
+              whileHover={(!activeContext?.voice?.id || isRecording || isDisabled) ? {} : { scale: 1.05 }}
+              whileTap={(!activeContext?.voice?.id || isRecording || isDisabled) ? {} : { scale: 0.95 }}
+              disabled={!activeContext?.voice?.id || isRecording || isDisabled}
             >
               <Volume2 className="h-5 w-5" />
             </motion.button>
@@ -331,12 +428,12 @@ export function ChatInput({
               className={`transition-colors p-2 rounded-lg ${
                 showPromptLibrary
                   ? 'text-primary bg-primary/10'
-                  : 'text-icon-color hover:text-icon-hover hover:bg-muted/10'
-              } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+                  : 'text-icon-color hover:text-icon-hover'
+              } ${isDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
               title="Prompt Library"
-              disabled={disabled}
-              whileHover={disabled ? {} : { scale: 1.05 }}
-              whileTap={disabled ? {} : { scale: 0.95 }}
+              disabled={isDisabled}
+              whileHover={isDisabled ? {} : { scale: 1.05 }}
+              whileTap={isDisabled ? {} : { scale: 0.95 }}
             >
               <HelpCircle className="h-5 w-5" />
             </motion.button>
@@ -345,14 +442,14 @@ export function ChatInput({
               type="button"
               onClick={() => setIsSearchMode?.(!isSearchMode)}
               aria-label={isSearchMode ? 'Search mode enabled' : 'Search mode disabled'}
-              className={`transition-all p-2 rounded-lg ${
+              className={`transition-colors p-2 rounded-lg ${
                 isSearchMode
                   ? 'text-green-500 bg-green-500/20 scale-110'
                   : 'text-icon-color hover:text-icon-hover hover:bg-muted/10'
-              } ${disabled ? 'opacity-50 cursor-not-allowed' : ''}`}
-              whileHover={disabled ? {} : { scale: 1.05 }}
-              whileTap={disabled ? {} : { scale: 0.95 }}
-              disabled={disabled}
+              } ${isDisabled ? 'opacity-50 cursor-not-allowed' : ''}`}
+              whileHover={isDisabled ? {} : { scale: 1.05 }}
+              whileTap={isDisabled ? {} : { scale: 0.95 }}
+              disabled={isToggleDisabled}
             >
               {isLoading && isSearchMode ? (
                 <Spinner className="h-5 w-5" />
@@ -364,13 +461,13 @@ export function ChatInput({
             <motion.button
               type="submit"
               className={`bg-primary text-button-text p-2 rounded-lg transition-colors ${
-                (!message.trim() || isLoading || isVoicePlaying || isVoiceToVoiceMode || disabled)
+                (!message.trim() || isLoading || isVoicePlaying || isVoiceToVoiceMode || isDisabled)
                   ? 'opacity-50 cursor-not-allowed'
                   : 'hover:bg-primary/90'
               }`}
-              whileHover={(!message.trim() || isLoading || isVoicePlaying || isVoiceToVoiceMode || disabled) ? {} : { scale: 1.05 }}
-              whileTap={(!message.trim() || isLoading || isVoicePlaying || isVoiceToVoiceMode || disabled) ? {} : { scale: 0.95 }}
-              disabled={!message.trim() || isLoading || isVoicePlaying || isVoiceToVoiceMode || disabled}
+              whileHover={(!message.trim() || isLoading || isVoicePlaying || isVoiceToVoiceMode || isDisabled) ? {} : { scale: 1.05 }}
+              whileTap={(!message.trim() || isLoading || isVoicePlaying || isVoiceToVoiceMode || isDisabled) ? {} : { scale: 0.95 }}
+              disabled={!message.trim() || isLoading || isVoicePlaying || isVoiceToVoiceMode || isDisabled}
             >
               {isLoading && !isSearchMode ? (
                 <Spinner className="h-5 w-5" />
@@ -399,9 +496,37 @@ export function ChatInput({
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: 'auto', opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            className="px-4 pb-4 text-red-500 text-sm"
+            className="px-4 pb-4 text-destructive text-sm"
           >
             {speechRecognitionError}
+          </motion.div>
+        )}
+
+        {filePaths.length > 0 && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="px-4 pb-4"
+          >
+            <div className="flex flex-wrap gap-2">
+              {filePaths.map((path, index) => (
+                <div
+                  key={index}
+                  className="flex items-center gap-2 px-3 py-1 bg-muted rounded-full text-sm"
+                >
+                  <span className="truncate max-w-[200px]">
+                    {path.split('/').pop()}
+                  </span>
+                  <button
+                    onClick={() => setFilePaths(paths => paths.filter((_, i) => i !== index))}
+                    className="p-1 hover:text-destructive transition-colors"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ))}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

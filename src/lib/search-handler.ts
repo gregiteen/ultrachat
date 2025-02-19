@@ -21,8 +21,7 @@ export async function handleSearch(content: string, forceSearch: boolean = false
          content.toLowerCase().includes("what's my name") ||
          content.toLowerCase().includes("what is my name") ||
          content.toLowerCase().includes('my name') ||
-         content.toLowerCase().includes('tell me about myself')) && 
-        personalInfo?.personalization_document) {
+         content.toLowerCase().includes('tell me about myself'))) {
       // Create a comprehensive personal response
       const response = `
 # About You
@@ -45,8 +44,7 @@ ${personalInfo.expertise_areas?.length ? `\nExpertise Areas: ${personalInfo.expe
 
     // If asking about personal preferences/info and personalization is active, don't search
     if (isPersonalizationActive && 
-        content.toLowerCase().match(/\b(my|about me|myself|i am|i'm|i like|i prefer|i want|i need)\b/) &&
-        personalInfo?.personalization_document) {
+        content.toLowerCase().match(/\b(my|about me|myself|i am|i'm|i like|i prefer|i want|i need)\b/)) {
       return {
         content,
         wasSearchPerformed: false

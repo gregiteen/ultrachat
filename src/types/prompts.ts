@@ -19,6 +19,12 @@ export interface Prompt {
     wasSearchPerformed: boolean;
     searchContext?: any;
   };
+  metadata?: {
+    assistant?: string;
+    personalization?: boolean;
+    search?: boolean;
+    tools?: string[];
+  };
   created_at: string;
   updated_at?: string;
 }

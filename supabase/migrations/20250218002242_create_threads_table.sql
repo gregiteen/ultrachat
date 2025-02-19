@@ -5,6 +5,9 @@ CREATE TABLE threads (
   title text NOT NULL,
   pinned boolean DEFAULT false,
   context_id uuid REFERENCES contexts,
+  personalization_enabled boolean DEFAULT false,
+  search_enabled boolean DEFAULT false,
+  tools_used text[] DEFAULT ARRAY[]::text[],
   created_at timestamptz DEFAULT now(),
   updated_at timestamptz DEFAULT now(),
   deleted_at timestamptz DEFAULT NULL

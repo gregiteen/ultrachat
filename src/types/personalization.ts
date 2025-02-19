@@ -12,6 +12,7 @@ export interface PersonalInfo {
   backstory?: string;
   projects?: string;
   resume?: string;
+  files?: string[];
   personalization_document?: string;
   communication_preferences?: {
     tone?: string;
@@ -37,6 +38,34 @@ export interface PersonalInfo {
     priority: string;
     due_date?: string;
   };
+  health_info?: {
+    height?: string;
+    weight?: string;
+    allergies?: string[];
+    medical_conditions?: string[];
+    dietary_preferences?: string[];
+  };
+  relationships?: {
+    family?: {
+      members: Array<{
+        relation: string;
+        name: string;
+      }>;
+    };
+    professional?: {
+      mentors?: string[];
+      colleagues?: string[];
+      collaborators?: string[];
+    };
+  };
+  identity_info?: {
+    worldview?: string;
+    values?: string[];
+    beliefs?: string[];
+    cultural_background?: string;
+  };
+  notes?: string;
+  additional_info?: Record<string, any>;
 }
 
 export interface PersonalizationDocument {

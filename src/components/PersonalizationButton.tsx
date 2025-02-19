@@ -6,7 +6,7 @@ import { usePersonalizationStore } from '../store/personalization';
 
 interface PersonalizationButtonProps {
   isActive: boolean;
-  onToggle: () => void;
+  onToggle: () => Promise<void>;
 }
 
 export function PersonalizationButton({ isActive, onToggle }: PersonalizationButtonProps) {
@@ -24,12 +24,7 @@ export function PersonalizationButton({ isActive, onToggle }: PersonalizationBut
 
   const handleToggle = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    try {
-      await onToggle();
-    } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to toggle personalization';
-      console.error('Error toggling personalization:', message);
-    }
+    await onToggle();
   };
 
   const handleSettings = () => {
@@ -41,10 +36,10 @@ export function PersonalizationButton({ isActive, onToggle }: PersonalizationBut
       {/* Toggle Button */}
       <button
         onClick={handleToggle}
-        className={`w-6 h-6 flex items-center justify-center rounded-md transition-colors relative ${
+        className={`w-8 h-8 flex items-center justify-center rounded-lg transition-colors relative ${
           isActive
-            ? 'bg-primary text-button-text'
-            : 'bg-muted text-muted-foreground hover:bg-muted/80'
+            ? 'bg-transparent text-muted-foreground hover:text-foreground hover:bg-muted/10'
+            : 'bg-primary text-white shadow-sm hover:bg-primary/90'
         }`}
         title={isActive ? 'Disable personalization' : 'Enable personalization'}
         disabled={loading}
@@ -52,7 +47,7 @@ export function PersonalizationButton({ isActive, onToggle }: PersonalizationBut
         {loading ? (
           <Spinner size="sm" className="absolute inset-0 m-auto" />
         ) : (
-          <span className={error ? 'text-destructive' : ''}>
+          <span className={`text-sm font-medium ${error ? 'text-destructive' : ''}`}>
             P
           </span>
         )}

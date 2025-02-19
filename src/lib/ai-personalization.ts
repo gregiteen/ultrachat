@@ -1,5 +1,6 @@
 import { use_mcp_tool } from './mcp';
 import type { PersonalizationDocument, PersonalInfo } from '../types/personalization';
+import { PERSONALIZATION_SYSTEM_MESSAGE } from './ultra-system-message';
 
 interface UserPreferences {
   communication: 'formal' | 'casual' | 'direct' | 'detailed' | 'collaborative';
@@ -56,7 +57,8 @@ export class AIPersonalization {
       arguments: {
         content,
         context,
-        state
+        state,
+        systemMessage: PERSONALIZATION_SYSTEM_MESSAGE
       }
     });
     return response;

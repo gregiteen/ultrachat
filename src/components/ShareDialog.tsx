@@ -1,6 +1,7 @@
 import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { X, Slack, Github, Mail, Copy, Download, Twitter } from 'lucide-react';
+import { useToastStore } from '../store/toastStore';
 
 interface ShareDialogProps {
   isOpen: boolean;
@@ -17,6 +18,8 @@ interface ShareOption {
 }
 
 export function ShareDialog({ isOpen, onClose, content }: ShareDialogProps) {
+  const { showToast } = useToastStore();
+
   const shareOptions: ShareOption[] = [
     {
       id: 'slack',
@@ -24,7 +27,11 @@ export function ShareDialog({ isOpen, onClose, content }: ShareDialogProps) {
       icon: <Slack className="w-5 h-5" />,
       action: async (text) => {
         // TODO: Implement Slack sharing
-        console.log('Share to Slack:', text);
+        showToast({
+          message: 'Slack sharing will be available soon!',
+          type: 'info',
+          duration: 3000
+        });
       },
       description: 'Share to a Slack channel or direct message'
     },
@@ -34,7 +41,11 @@ export function ShareDialog({ isOpen, onClose, content }: ShareDialogProps) {
       icon: <Github className="w-5 h-5" />,
       action: async (text) => {
         // TODO: Implement GitHub sharing
-        console.log('Share to GitHub:', text);
+        showToast({
+          message: 'GitHub sharing will be available soon!',
+          type: 'info',
+          duration: 3000
+        });
       },
       description: 'Create a GitHub Gist or issue'
     },
@@ -43,8 +54,20 @@ export function ShareDialog({ isOpen, onClose, content }: ShareDialogProps) {
       name: 'Email',
       icon: <Mail className="w-5 h-5" />,
       action: async (text) => {
-        const subject = 'Shared from UltraChat';
-        window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(text)}`;
+        try {
+          const subject = 'Shared from UltraChat';
+          window.location.href = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(text)}`;
+          showToast({
+            message: 'Content has been added to a new email',
+            type: 'success'
+          });
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Failed to open email client';
+          showToast({
+            message: errorMessage,
+            type: 'error'
+          });
+        }
       },
       description: 'Send via email'
     },
@@ -53,8 +76,20 @@ export function ShareDialog({ isOpen, onClose, content }: ShareDialogProps) {
       name: 'Twitter',
       icon: <Twitter className="w-5 h-5" />,
       action: async (text) => {
-        const tweet = text.slice(0, 280); // Twitter character limit
-        window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(tweet)}`, '_blank');
+        try {
+          const tweet = text.slice(0, 280); // Twitter character limit
+          window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(tweet)}`, '_blank');
+          showToast({
+            message: 'Content has been prepared for tweeting',
+            type: 'success'
+          });
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Failed to open Twitter';
+          showToast({
+            message: errorMessage,
+            type: 'error'
+          });
+        }
       },
       description: 'Share on Twitter (truncated to 280 characters)'
     },
@@ -63,8 +98,19 @@ export function ShareDialog({ isOpen, onClose, content }: ShareDialogProps) {
       name: 'Copy',
       icon: <Copy className="w-5 h-5" />,
       action: async (text) => {
-        await navigator.clipboard.writeText(text);
-        // TODO: Show toast notification
+        try {
+          await navigator.clipboard.writeText(text);
+          showToast({
+            message: 'Content copied to clipboard',
+            type: 'success'
+          });
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Failed to copy to clipboard';
+          showToast({
+            message: errorMessage,
+            type: 'error'
+          });
+        }
       },
       description: 'Copy to clipboard'
     },
@@ -73,15 +119,27 @@ export function ShareDialog({ isOpen, onClose, content }: ShareDialogProps) {
       name: 'Download',
       icon: <Download className="w-5 h-5" />,
       action: async (text) => {
-        const blob = new Blob([text], { type: 'text/plain' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'ultrachat-response.txt';
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-        URL.revokeObjectURL(url);
+        try {
+          const blob = new Blob([text], { type: 'text/plain' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url;
+          a.download = 'ultrachat-response.txt';
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          showToast({
+            message: 'Content saved as text file',
+            type: 'success'
+          });
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : 'Failed to download file';
+          showToast({
+            message: errorMessage,
+            type: 'error'
+          });
+        }
       },
       description: 'Download as text file'
     }
@@ -120,7 +178,17 @@ export function ShareDialog({ isOpen, onClose, content }: ShareDialogProps) {
               {shareOptions.map(option => (
                 <motion.button
                   key={option.id}
-                  onClick={() => option.action(content)}
+                  onClick={async () => {
+                    try {
+                      await option.action(content);
+                    } catch (error) {
+                      const errorMessage = error instanceof Error ? error.message : 'An error occurred';
+                      showToast({
+                        message: `Failed to ${option.name.toLowerCase()}: ${errorMessage}`,
+                        type: 'error'
+                      });
+                    }
+                  }}
                   className="flex flex-col items-center p-4 rounded-lg hover:bg-gray-50 transition-colors text-center"
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
@@ -134,16 +202,6 @@ export function ShareDialog({ isOpen, onClose, content }: ShareDialogProps) {
                   </span>
                 </motion.button>
               ))}
-            </div>
-
-            {/* Preview */}
-            <div className="p-4 border-t bg-gray-50">
-              <div className="text-sm font-medium mb-2">Preview:</div>
-              <div className="text-sm text-gray-600 max-h-32 overflow-y-auto rounded bg-white p-2 border">
-                {content.length > 200
-                  ? content.slice(0, 200) + '...'
-                  : content}
-              </div>
             </div>
           </motion.div>
         </motion.div>

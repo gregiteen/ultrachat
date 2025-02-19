@@ -44,7 +44,14 @@ export const useContextStore = create<ContextState>((set, get) => ({
         .order('created_at', { ascending: true })
         .execute();
 
-      if (result.error) throw result.error;
+      if (result.error) {
+        // If table doesn't exist yet, just use empty array
+        if (result.error.message?.includes('does not exist')) {
+          set({ contexts: [], initialized: true });
+          return;
+        }
+        throw result.error;
+      }
 
       const contexts = result.data as Context[];
       set({ contexts });
@@ -57,7 +64,7 @@ export const useContextStore = create<ContextState>((set, get) => ({
     } catch (error) {
       console.error('Error fetching contexts:', error);
       set({ error: error instanceof Error ? error.message : 'Failed to fetch contexts' });
-      throw error; // Let Chat.tsx handle initialization error
+      set({ contexts: [], initialized: true }); // Continue with empty contexts
     } finally {
       set({ loading: false });
     }

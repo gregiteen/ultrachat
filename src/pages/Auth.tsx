@@ -6,8 +6,9 @@ import { useThreadStore } from '../store/chat';
 export default function Auth() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const { user, initialized, loading } = useAuthStore();
+  const [isSignUp, setIsSignUp] = useState(true);
+  const [localError, setLocalError] = useState('');
+  const { user, initialized, loading, loadingType, error, signUp, signIn } = useAuthStore();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -18,43 +19,53 @@ export default function Auth() {
     }
   }, [user, initialized, navigate]);
 
-  if (!initialized) {
+  if (!initialized || loading) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="animate-spin h-12 w-12 border-4 border-primary border-t-transparent rounded-full" />
+        <div className="flex flex-col items-center space-y-4">
+          <div className="animate-spin h-12 w-12 border-4 border-primary border-t-transparent rounded-full" />
+          {loadingType === 'init' && <p className="text-sm text-muted-foreground">Initializing...</p>}
+          {loadingType === 'signin' && <p className="text-sm text-muted-foreground">Signing in...</p>}
+          {loadingType === 'signup' && <p className="text-sm text-muted-foreground">Creating account...</p>}
+        </div>
       </div>
     );
   }
 
-  const { signUp } = useAuthStore();
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    setLocalError('');
 
     try {
-      await signUp(email, password);
-      setError('Please check your email for verification link');
-      navigate('/');
+      if (isSignUp) {
+        await signUp(email, password);
+        setLocalError('Please check your email for verification link');
+        navigate('/');
+        return;
+      } else {
+        await signIn(email, password);
+        navigate('/chat');
+        return;
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      setLocalError(err instanceof Error ? err.message : 'An error occurred');
     }
   };
 
   return (
     <div className="min-h-screen bg-background flex flex-col justify-center py-12 sm:px-6 lg:px-8">
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
-        <img src="https://imgur.com/EJ0T2co.png" alt="UltraChat" className="mx-auto h-16 w-auto" />
+        <img src="/logo.png" alt="UltraChat" className="mx-auto h-24 w-auto" />
         <h2 className="mt-6 text-center text-3xl font-extrabold text-foreground">
-          Create your account
+          {isSignUp ? 'Create your account' : 'Sign in to your account'}
         </h2>
         <p className="mt-2 text-center text-sm text-muted-foreground">
-          Already have an account?
+          {isSignUp ? 'Already have an account?' : "Don't have an account?"}
           <button
-            onClick={() => navigate('/')}
-            className="font-medium text-primary hover:text-secondary transition-colors"
+            onClick={() => setIsSignUp(!isSignUp)}
+            className="ml-2 font-medium text-primary hover:text-secondary transition-colors"
           >
-            Sign in
+            {isSignUp ? 'Sign in' : 'Create account'}
           </button>
         </p>
       </div>
@@ -62,9 +73,10 @@ export default function Auth() {
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
         <div className="bg-muted/5 py-8 px-4 shadow-xl ring-1 ring-muted/10 sm:rounded-lg sm:px-10">
           <form className="space-y-6" onSubmit={handleSubmit}>
-            {error && (
-              <div className="rounded-md bg-red-50 p-4 text-sm text-red-700">
-                {error}
+            {(localError || error) && (
+              <div className="rounded-md bg-red-50 p-4 text-sm text-red-700 space-y-2">
+                {localError && <p>{localError}</p>}
+                {error && <p>{error}</p>}
               </div>
             )}
 
@@ -108,9 +120,14 @@ export default function Auth() {
               <button
                 type="submit"
                 disabled={loading}
-                className="flex w-full justify-center rounded-md bg-primary px-3 py-2 text-sm font-semibold text-button-text shadow-sm hover:bg-secondary transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-50"
+                className="relative flex w-full justify-center rounded-md bg-primary px-3 py-2 text-sm font-semibold text-button-text shadow-sm hover:bg-secondary transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-50"
               >
-                Sign up
+                {loading && (
+                  <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+                    <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                  </div>
+                )}
+                <span className={loading ? 'invisible' : ''}>{isSignUp ? 'Sign up' : 'Sign in'}</span>
               </button>
             </div>
           </form>

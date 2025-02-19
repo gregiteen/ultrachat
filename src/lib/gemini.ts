@@ -1,4 +1,4 @@
-const GEMINI_API_URL = import.meta.env.DEV ? '/v1beta/models/gemini-2.0-pro-exp-02-05:generateContent' : 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-pro-exp-02-05:generateContent';
+const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-pro-exp-02-05:generateContent';
 
 interface ChatMessage {
   role: 'user' | 'model';
@@ -40,82 +40,68 @@ interface SendMessageOptions {
   signal?: AbortSignal;
 }
 
-class Chat {
+export class Chat {
   private history: ChatMessage[] = [];
   private context: PersonalizationContext | null = null;
+  private baseSystemMessage: string;
 
-  constructor(private apiKey: string) {}
+  constructor(private apiKey: string, systemMessage?: string) {
+    this.baseSystemMessage = systemMessage || '';
+    if (systemMessage) {
+      this.history.push({ role: 'model', content: systemMessage });
+    }
+  }
 
   setPersonalizationContext(context: PersonalizationContext) {
     this.context = context;
   }
 
   private getSystemPrompt(isSearch: boolean = false): string {
-    let prompt = `You are UltraChat, a highly advanced AI assistant powered by Gemini 2.0 Pro Experimental. You aim to provide exceptionally detailed, nuanced, and personalized responses while maintaining a professional tone. Your responses should demonstrate deep understanding and sophisticated analysis.
+    // Layer 1: Base System Message
+    let prompt = this.baseSystemMessage + '\n\n';
 
-Response Format:
-1. Always start with a clear, direct answer
-2. Use proper paragraph breaks for readability
-3. Format lists and technical information clearly
-4. Keep responses concise but informative
-5. Separate sections with clear headings when needed
-
-When thinking about a response:
-1. Use <thinking> tags to show your analysis
-2. Keep thoughts separate from the final response
-3. Structure thoughts logically
-4. Consider all relevant context
-
-When answering questions:
-1. Start with the most relevant information
-2. Use proper formatting:
-   - Paragraphs for explanations
-   - Bullet points for lists
-   - Headers for sections
-   - Code blocks for code
-3. Cite sources when available
-4. Include relevant context
-
-Search Results Format:
-1. Integrate search information naturally
-2. Maintain clear structure with sections
-3. Use proper citation format`;
-
+    // Layer 2: Personalization Context (only if context exists)
     if (this.context) {
-      prompt += '\n\nPersonalization Context:';
-      
-      if (this.context.name) {
-        prompt += `\nName: ${this.context.name}`;
-      }
-      
-      if (this.context.backstory) {
-        prompt += `\nBackground: ${this.context.backstory}`;
-      }
-      
-      if (this.context.interests?.length) {
-        prompt += `\nInterests: ${this.context.interests.join(', ')}`;
-      }
-      
-      if (this.context.expertise_areas?.length) {
-        prompt += `\nExpertise Areas: ${this.context.expertise_areas.join(', ')}`;
-      }
-      
-      if (this.context.personalDocument) {
-        prompt += `\n\nDetailed Profile:\n${this.context.personalDocument}`;
-      }
+      prompt += 'Personalization Context:\n';
+      if (this.context.name) prompt += `User Name: ${this.context.name}\n`;
+      if (this.context.personalDocument) prompt += `Profile: ${this.context.personalDocument}\n`;
+      if (this.context.backstory) prompt += `Background: ${this.context.backstory}\n`;
+      if (this.context.interests?.length) prompt += `Interests: ${this.context.interests.join(', ')}\n`;
+      if (this.context.expertise_areas?.length) prompt += `Expertise: ${this.context.expertise_areas.join(', ')}\n`;
       
       if (this.context.preferences) {
-        prompt += '\n\nPreferences:';
-        if (this.context.preferences.communication?.tone) {
-          prompt += `\n- Communication Tone: ${this.context.preferences.communication.tone}`;
-          prompt += `\n- Communication Style: ${this.context.preferences.communication.style || 'Not specified'}`;
-          prompt += `\n- Learning Style: ${this.context.preferences.learning?.style || 'Not specified'}`;
-          prompt += `\n- Work Style: ${this.context.preferences.work?.style || 'Not specified'}`;
-        }
+        const prefs = this.context.preferences;
+        if (prefs.communication?.style) prompt += `Communication Style: ${prefs.communication.style}\n`;
+        if (prefs.learning?.style) prompt += `Learning Style: ${prefs.learning.style}\n`;
+        if (prefs.work?.style) prompt += `Work Style: ${prefs.work.style}\n`;
       }
-      
-      prompt += '\n\nPlease tailor your responses to match these preferences and context.';
+      prompt += '\n';
     }
+
+    // Layer 3: Search Context (only if search is enabled)
+    if (isSearch) {
+      prompt += 'Search Context:\n';
+      prompt += '- Integrate search results naturally into responses\n';
+      prompt += '- Cite sources when referencing search information\n';
+      prompt += '- Maintain clear structure with sections\n\n';
+    }
+
+    // Layer 4: Available Tools (always included)
+    prompt += 'Available Tools:\n';
+    prompt += '1. Search Tools\n';
+    prompt += '   - Web search for real-time information\n';
+    prompt += '   - Document search within user files\n';
+    prompt += '2. Task Tools\n';
+    prompt += '   - Task creation and management\n';
+    prompt += '   - Project organization\n';
+    prompt += '3. File Tools\n';
+    prompt += '   - Document processing\n';
+    prompt += '   - Content extraction\n';
+    prompt += '4. Integration Tools\n';
+    prompt += '   - Calendar management\n';
+    prompt += '   - Email and messaging\n';
+    prompt += '   - Browser automation\n';
+    prompt += '\n';
 
     return prompt;
   }
@@ -125,7 +111,7 @@ Search Results Format:
     const userMessage: ChatMessage = { role: 'user', content };
     this.history.push(userMessage);
 
-    // Keep only last 10 messages for context window
+    // Keep only last 20 messages for context window
     if (this.history.length > 20) {
       this.history = this.history.slice(-20);
     }
@@ -142,9 +128,15 @@ Search Results Format:
         body: JSON.stringify({
           contents: [{
             parts: [{
-              text: systemPrompt + "\n\n" + this.history.map(msg => 
-                `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`
-              ).join("\n") + "\n\nUser: " + content
+              text: `${systemPrompt}\n\nConversation History:\n` + 
+                this.history.map((msg, index) => {
+                  // Skip system messages in history
+                  if (index === 0 && msg.role === 'model' && msg.content === this.baseSystemMessage) return '';
+                  return `${msg.role === 'user' ? 'Human' : 'Assistant'}: ${msg.content}`;
+                })
+                .filter(Boolean)
+                .join("\n") + 
+                "\nAssistant:"
             }]
           }]
         })
@@ -232,12 +224,12 @@ class GeminiAPI {
     this.apiKey = apiKey;
   }
 
-  startChat(): Chat {
-    return new Chat(this.apiKey);
+  startChat(systemMessage?: string): Chat {
+    return new Chat(this.apiKey, systemMessage);
   }
   
-  startChatWithContext(context: PersonalizationContext): Chat {
-    const chat = new Chat(this.apiKey);
+  startChatWithContext(context: PersonalizationContext, systemMessage?: string): Chat {
+    const chat = new Chat(this.apiKey, systemMessage);
     chat.setPersonalizationContext(context);
     return chat;
   }
@@ -246,51 +238,6 @@ class GeminiAPI {
     const chat = new Chat(this.apiKey);
     const result = await chat.sendMessage(prompt);
     return result.response.text();
-  }
-
-  async generateStructuredResponse(prompt: string): Promise<any> {
-    const response = await this.generateText(prompt);
-    try {
-      // Clean up the response to handle markdown code blocks
-      let cleanResponse = response;
-      
-      // Remove markdown code block markers if present
-      if (response.includes('```json')) {
-        cleanResponse = response
-          .replace(/```json\n?/, '')
-          .replace(/```(\n)?$/, '')
-          .trim();
-      }
-      
-      // Parse and validate the response
-      const parsed = JSON.parse(cleanResponse);
-      
-      return parsed;
-    } catch (error) {
-      console.error('Error parsing structured response:', error);
-      throw new Error('Failed to parse structured response from Gemini');
-    }
-  }
-
-  async generatePersonalizationResponse(prompt: string): Promise<any> {
-    const chat = new Chat(this.apiKey);
-    const result = await chat.sendMessage(prompt);
-    const response = result.response.text();
-
-    try {
-      // Clean up the response to handle markdown code blocks
-      let cleanResponse = response;
-      
-      // Remove markdown code blocks if present
-      if (response.includes('```json')) {
-        cleanResponse = response.replace(/```json\n?/, '').replace(/```(\n)?$/, '').trim();
-      }
-      
-      return JSON.parse(cleanResponse);
-    } catch (error) {
-      console.error('Error parsing personalization response:', error, '\nRaw response:', response);
-      throw new Error('Failed to parse personalization response from Gemini');
-    }
   }
 }
 

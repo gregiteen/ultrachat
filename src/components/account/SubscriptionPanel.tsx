@@ -1,136 +1,150 @@
 import React from 'react';
-import { Check, Zap } from 'lucide-react';
-import { useSubscriptionStore } from '../../store/subscription';
-import type { SubscriptionTier } from '../../types';
+import { CreditCard, Zap, Shield, Globe, CheckCircle2 } from 'lucide-react';
 
-const SUBSCRIPTION_TIERS: SubscriptionTier[] = [
+const plans = [
   {
     id: 'free',
     name: 'Free',
-    price: 0,
-    billing_period: 'monthly',
+    price: '$0',
+    period: 'forever',
+    description: 'Basic features for personal use',
     features: [
-      'Up to 100 messages per day',
-      '1GB storage',
-      'Basic email integration',
-      'Task management',
+      'Basic chat functionality',
+      'Standard response time',
+      'Community support',
+      '5 conversations per day',
     ],
-    limits: {
-      messages_per_day: 100,
-      storage_gb: 1,
-      max_integrations: 1,
-      max_team_members: 1,
-    },
+    current: true
   },
   {
     id: 'pro',
     name: 'Pro',
-    price: 19,
-    billing_period: 'monthly',
+    price: '$10',
+    period: 'per month',
+    description: 'Advanced features for power users',
     features: [
-      'Unlimited messages',
-      '10GB storage',
-      'All integrations',
-      'Priority support',
-      'Advanced analytics',
+      'Priority response time',
+      'Advanced AI capabilities',
+      'Email support',
+      'Unlimited conversations',
+      'Custom themes',
+      'Voice commands',
     ],
-    limits: {
-      messages_per_day: -1, // unlimited
-      storage_gb: 10,
-      max_integrations: -1, // unlimited
-      max_team_members: 5,
-    },
+    current: false
   },
   {
     id: 'enterprise',
     name: 'Enterprise',
-    price: 49,
-    billing_period: 'monthly',
+    price: 'Custom',
+    period: 'per organization',
+    description: 'Custom solutions for teams',
     features: [
-      'Unlimited everything',
-      'Custom integrations',
       'Dedicated support',
-      'SLA guarantee',
+      'Custom integrations',
+      'Team collaboration',
+      'Advanced analytics',
+      'SLA guarantees',
       'Custom AI training',
     ],
-    limits: {
-      messages_per_day: -1,
-      storage_gb: 100,
-      max_integrations: -1,
-      max_team_members: -1,
-    },
-  },
+    current: false
+  }
 ];
 
-export function SubscriptionPanel() {
-  const { currentTier, changeTier, loading } = useSubscriptionStore();
-
-  const handleUpgrade = async (tierId: SubscriptionTier['id']) => {
-    try {
-      await changeTier(tierId);
-    } catch (error) {
-      console.error('Failed to upgrade:', error);
-    }
-  };
-
+export default function SubscriptionPanel() {
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold text-gray-900">Subscription</h2>
-        <Zap className="h-6 w-6 text-yellow-500" />
+      <div>
+        <h3 className="text-lg font-medium mb-4">Subscription Plans</h3>
+        <p className="text-sm text-muted-foreground mb-6">
+          Choose the plan that best fits your needs.
+        </p>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        {SUBSCRIPTION_TIERS.map((tier) => {
-          const isCurrentTier = currentTier?.id === tier.id;
-          return (
-            <div
-              key={tier.id}
-              className={`rounded-lg border ${
-                isCurrentTier ? 'border-blue-600' : 'border-gray-200'
-              } bg-white p-6 shadow-sm`}
-            >
-              <div className="flex flex-col items-start">
-                <h3 className="text-lg font-semibold text-gray-900">
-                  {tier.name}
-                </h3>
-                <div className="mt-2">
-                  <span className="text-3xl font-bold text-gray-900">
-                    ${tier.price}
-                  </span>
-                  <span className="text-gray-500">/month</span>
-                </div>
-                <ul className="mt-6 space-y-4">
-                  {tier.features.map((feature) => (
-                    <li key={feature} className="flex items-center gap-2">
-                      <Check className="h-4 w-4 text-green-600" />
-                      <span className="text-sm text-gray-600">{feature}</span>
-                    </li>
-                  ))}
-                </ul>
-                <button
-                  onClick={() => handleUpgrade(tier.id)}
-                  disabled={loading || isCurrentTier}
-                  className={`mt-8 w-full rounded-lg px-4 py-2 text-sm font-medium ${
-                    isCurrentTier
-                      ? 'bg-gray-100 text-gray-600'
-                      : 'bg-blue-600 text-white hover:bg-blue-700'
-                  } disabled:opacity-50`}
-                >
-                  {isCurrentTier
-                    ? 'Current Plan'
-                    : loading
-                    ? 'Processing...'
-                    : `Upgrade to ${tier.name}`}
-                </button>
+      <div className="grid grid-cols-3 gap-6">
+        {plans.map((plan) => (
+          <div
+            key={plan.id}
+            className={`rounded-lg border ${
+              plan.current
+                ? 'border-primary'
+                : 'border-muted'
+            } p-6 space-y-4`}
+          >
+            <div className="space-y-2">
+              <h4 className="text-xl font-semibold">{plan.name}</h4>
+              <div className="flex items-baseline gap-1">
+                <span className="text-2xl font-bold">{plan.price}</span>
+                <span className="text-sm text-muted-foreground">
+                  /{plan.period}
+                </span>
               </div>
+              <p className="text-sm text-muted-foreground">
+                {plan.description}
+              </p>
             </div>
-          );
-        })}
+
+            <ul className="space-y-3">
+              {plan.features.map((feature, index) => (
+                <li key={index} className="flex items-start gap-2">
+                  <CheckCircle2 className="h-5 w-5 text-primary flex-shrink-0 mt-0.5" />
+                  <span className="text-sm">{feature}</span>
+                </li>
+              ))}
+            </ul>
+
+            <button
+              className={`w-full py-2 px-4 rounded-md text-sm font-medium transition-colors ${
+                plan.current
+                  ? 'bg-primary/10 text-primary'
+                  : 'bg-primary text-button-text hover:bg-primary/90'
+              }`}
+            >
+              {plan.current ? 'Current Plan' : 'Upgrade'}
+            </button>
+          </div>
+        ))}
       </div>
 
-      <div className="mt-6 rounded-lg bg-blue-50 p-4 text-sm text-blue-600">
-        Need a custom plan? Contact our sales team for enterprise solutions.
+      <div className="mt-12 space-y-6">
+        <h4 className="text-lg font-medium">Plan Features</h4>
+        <div className="grid grid-cols-2 gap-6">
+          <div className="flex gap-4">
+            <Zap className="h-6 w-6 text-primary flex-shrink-0" />
+            <div>
+              <h5 className="font-medium mb-1">Fast Response Time</h5>
+              <p className="text-sm text-muted-foreground">
+                Get responses in milliseconds with our optimized infrastructure.
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-4">
+            <Shield className="h-6 w-6 text-primary flex-shrink-0" />
+            <div>
+              <h5 className="font-medium mb-1">Enterprise Security</h5>
+              <p className="text-sm text-muted-foreground">
+                Bank-grade encryption and security measures to protect your data.
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-4">
+            <Globe className="h-6 w-6 text-primary flex-shrink-0" />
+            <div>
+              <h5 className="font-medium mb-1">Global Infrastructure</h5>
+              <p className="text-sm text-muted-foreground">
+                Distributed servers ensure low latency worldwide.
+              </p>
+            </div>
+          </div>
+          <div className="flex gap-4">
+            <CreditCard className="h-6 w-6 text-primary flex-shrink-0" />
+            <div>
+              <h5 className="font-medium mb-1">Flexible Billing</h5>
+              <p className="text-sm text-muted-foreground">
+                Pay monthly or annually with all major payment methods.
+              </p>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

@@ -2,26 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Music2, Youtube, Search, Plus, X, PlayCircle, Heart, Clock, Filter } from 'lucide-react';
 import { useContextStore } from '../../store/context';
-
-interface Track {
-  id: string;
-  title: string;
-  artist: string;
-  artwork?: string;
-  duration: number;
-  source: 'local' | 'youtube';
-  url: string;
-  isPlaying?: boolean;
-  addedAt: Date;
-  isFavorite?: boolean;
-}
-
-interface Playlist {
-  id: string;
-  name: string;
-  tracks: Track[];
-  createdAt: Date;
-}
+import type { Track, Playlist } from '../../types/audio';
 
 interface AudioLibraryProps {
   isOpen: boolean;
@@ -148,7 +129,7 @@ export function AudioLibrary({ isOpen, onClose, onTrackSelect, currentTrack }: A
         case 'artist':
           return a.artist.localeCompare(b.artist);
         default:
-          return b.addedAt.getTime() - a.addedAt.getTime();
+          return (b.addedAt?.getTime() ?? 0) - (a.addedAt?.getTime() ?? 0);
       }
     });
 

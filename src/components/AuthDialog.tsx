@@ -12,15 +12,22 @@ interface AuthDialogProps {
 export function AuthDialog({ isOpen, onClose, anchorRef }: AuthDialogProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const { signIn, loading } = useAuthStore();
+  const [localError, setLocalError] = useState('');
+  const { signIn, loading, loadingType, error } = useAuthStore();
   const navigate = useNavigate();
 
   if (!isOpen) return null;
 
   // Get position for the dialog
   const getPosition = () => {
-    if (!anchorRef.current) return {};
+    if (!anchorRef.current) {
+      // Default centered position
+      return {
+        top: '50%',
+        left: '50%',
+        transform: 'translate(-50%, -50%)'
+      };
+    }
     const rect = anchorRef.current.getBoundingClientRect();
     return {
       top: `${rect.bottom + 8}px`,
@@ -30,13 +37,13 @@ export function AuthDialog({ isOpen, onClose, anchorRef }: AuthDialogProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError('');
+    setLocalError('');
 
     try {
       await signIn(email, password);
       onClose(); // Just close the dialog, AuthProvider will handle navigation
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      setLocalError(err instanceof Error ? err.message : 'An error occurred');
     }
   };
 
@@ -44,7 +51,7 @@ export function AuthDialog({ isOpen, onClose, anchorRef }: AuthDialogProps) {
     <>
       {/* Backdrop */}
       <div 
-        className="fixed inset-0 z-40"
+        className="fixed inset-0 bg-black/20 backdrop-blur-sm z-40"
         onClick={onClose}
       />
 
@@ -64,9 +71,10 @@ export function AuthDialog({ isOpen, onClose, anchorRef }: AuthDialogProps) {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {error && (
-            <div className="rounded-md bg-red-50 p-3 text-sm text-red-700">
-              {error}
+          {(localError || error) && (
+            <div className="rounded-md bg-red-50 p-3 text-sm text-red-700 space-y-2">
+              {localError && <p>{localError}</p>}
+              {error && <p>{error}</p>}
             </div>
           )}
 
@@ -102,9 +110,14 @@ export function AuthDialog({ isOpen, onClose, anchorRef }: AuthDialogProps) {
             <button
               type="submit"
               disabled={loading}
-              className="rounded-md bg-primary px-3 py-2 text-sm font-semibold text-button-text shadow-sm hover:bg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary transition-colors disabled:opacity-50"
+              className="relative rounded-md bg-primary px-3 py-2 text-sm font-semibold text-button-text shadow-sm hover:bg-secondary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary transition-colors disabled:opacity-50"
             >
-              Sign in
+              {loading && (
+                <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                </div>
+              )}
+              <span className={loading ? 'invisible' : ''}>Sign in</span>
             </button>
             <button
               type="button"

@@ -2,17 +2,20 @@ import { create } from 'zustand';
 import { supabase } from '../lib/supabase';
 import { getChatModel } from '../lib/gemini';
 import { handleSearch } from '../lib/search-handler';
+import { integrationChat } from '../lib/integrations/chat-handler';
 import type { Message, MessageVersion } from '../types';
 import { usePersonalizationStore } from './personalization';
 import { useThreadStore } from './threadStore';
+import { useIntegrationsStore } from './integrations';
+import { ULTRA_SYSTEM_MESSAGE, PERSONALIZATION_SYSTEM_MESSAGE } from '../lib/ultra-system-message';
 
 interface MessageState {
   messages: Message[];
   loading: boolean;
   error: string | null;
-  messageQueue: Map<string, AbortController>; // Track pending messages
-  retryCount: Map<string, number>; // Track retry attempts
-  pendingUpdates: Set<string>; // Track messages being updated
+  messageQueue: Map<string, AbortController>;
+  retryCount: Map<string, number>;
+  pendingUpdates: Set<string>;
   fetchMessages: (threadId: string) => Promise<void>;
   sendMessage: (
     content: string,
@@ -20,7 +23,8 @@ interface MessageState {
     contextId?: string,
     isSystemMessage?: boolean,
     skipAiResponse?: boolean,
-    forceSearch?: boolean
+    forceSearch?: boolean,
+    metadata?: { personalization_enabled?: boolean; search_enabled?: boolean; tools_used?: string[] }
   ) => Promise<void>;
   clearThreadMessages: (threadId: string) => void;
   updateMessageContent: (messageId: string, content: string) => Promise<void>;
@@ -32,11 +36,9 @@ interface MessageState {
 }
 
 const MAX_RETRIES = 3;
-const BATCH_SIZE = 50;
 const MESSAGE_TIMEOUT = 30000; // 30 seconds
 
 export const useMessageStore = create<MessageState>((set, get) => {
-  // Helper to clean up message resources
   const cleanupMessage = (messageId: string) => {
     const state = get();
     state.messageQueue.get(messageId)?.abort();
@@ -45,7 +47,6 @@ export const useMessageStore = create<MessageState>((set, get) => {
     state.pendingUpdates.delete(messageId);
   };
 
-  // Helper to handle errors with retry logic
   const handleMessageError = async (messageId: string, error: any) => {
     const state = get();
     const currentRetries = state.retryCount.get(messageId) || 0;
@@ -59,6 +60,54 @@ export const useMessageStore = create<MessageState>((set, get) => {
     }
   };
 
+  const handleIntegrationCommand = async (
+    content: string,
+    threadId: string,
+    userId: string
+  ): Promise<Message | null> => {
+    const command = integrationChat.parseCommand(content);
+    if (!command) return null;
+
+    const integration = useIntegrationsStore.getState().integrations.find(
+      i => i.type === command.service
+    );
+    if (!integration) {
+      throw new Error(`Integration not found: ${command.service}`);
+    }
+
+    const response = await integrationChat.executeCommand(
+      command,
+      integration,
+      (progress) => {
+        const progressMessage = integrationChat.generateMessage(progress);
+        progressMessage.integrations = {
+          used: [command.service],
+          context: {
+            action: command.action
+          }
+        };
+        progressMessage.thread_id = threadId;
+        progressMessage.user_id = userId;
+
+        set(state => ({
+          messages: [...state.messages, progressMessage]
+        }));
+      }
+    );
+
+    const message = integrationChat.generateMessage(response);
+    message.integrations = {
+      used: [command.service],
+      context: {
+        action: command.action
+      }
+    };
+    message.thread_id = threadId;
+    message.user_id = userId;
+
+    return message;
+  };
+
   return {
     messages: [],
     loading: false,
@@ -67,8 +116,31 @@ export const useMessageStore = create<MessageState>((set, get) => {
     retryCount: new Map(),
     pendingUpdates: new Set(),
 
+    fetchMessages: async (threadId: string) => {
+      set({ loading: true, error: null });
+      try {
+        const { data: messages, error: messagesError } = await supabase
+          .from('messages')
+          .select(`
+            id, content, role, thread_id, user_id, created_at, version_count
+          `)
+          .eq('thread_id', threadId)
+          .order('created_at', { ascending: true });
+
+        if (messagesError) throw messagesError;
+        if (!messages) throw new Error('No messages found');
+        set({ messages, loading: false, error: null });
+
+      } catch (error) {
+        console.error('Error loading messages:', error);
+        set({ 
+          error: error instanceof Error ? error.message : 'Failed to load messages',
+          loading: false 
+        });
+      }
+    },
+
     clearThreadMessages: (threadId: string) => {
-      // Cancel any pending messages
       const state = get();
       state.messageQueue.forEach((controller, messageId) => {
         controller.abort();
@@ -83,7 +155,6 @@ export const useMessageStore = create<MessageState>((set, get) => {
 
       state.pendingUpdates.add(messageId);
       try {
-        // Create new version
         const { data: currentMessage } = await supabase
           .from('messages')
           .select('content, version_count')
@@ -92,93 +163,36 @@ export const useMessageStore = create<MessageState>((set, get) => {
 
         if (!currentMessage) throw new Error('Message not found');
 
-        const newVersionNumber = (currentMessage.version_count || 0) + 1;
+        const currentVersionNumber = currentMessage.version_count || 1;
 
-        // Save old version
         await supabase.from('message_versions').insert({
           message_id: messageId,
           content: currentMessage.content,
-          version_number: newVersionNumber - 1,
+          version_number: currentVersionNumber,
           created_by: 'user'
         });
 
-        // Update message
         const { error: updateError } = await supabase
           .from('messages')
           .update({ 
             content,
-            version_count: newVersionNumber
+            version_count: currentVersionNumber + 1
           })
           .eq('id', messageId);
 
         if (updateError) throw updateError;
 
-        // Update local state
         set(state => ({
           messages: state.messages.map(m =>
             m.id === messageId ? { 
               ...m, 
               content,
-              version_count: newVersionNumber
+              version_count: currentVersionNumber + 1
             } : m
           )
         }));
       } finally {
         state.pendingUpdates.delete(messageId);
-      }
-    },
-
-    fetchMessages: async (threadId: string) => {
-      set({ loading: true, error: null });
-      try {
-        let allMessages: Message[] = [];
-        let lastId: string | null = null;
-        
-        // Fetch messages in batches
-        while (true) {
-          const query = supabase
-            .from('messages')
-            .select(`
-              id, content, role, thread_id, user_id, created_at, version_count,
-              versions:message_versions(
-                id, content, version_number, created_at, created_by
-              )
-            `)
-            .eq('thread_id', threadId)
-            .order('created_at', { ascending: true })
-            .limit(BATCH_SIZE);
-
-          if (lastId) {
-            query.gt('id', lastId);
-          }
-
-          const { data, error } = await query;
-
-          if (error) throw error;
-          if (!data || data.length === 0) break;
-
-          const messages = data.map(msg => ({
-            ...msg,
-            versions: msg.versions?.map(v => ({
-              ...v,
-              message_id: msg.id,
-              is_current: v.version_number === msg.version_count
-            })) || []
-          }));
-
-          allMessages = [...allMessages, ...messages];
-          lastId = data[data.length - 1].id;
-
-          if (data.length < BATCH_SIZE) break;
-        }
-
-        set({ messages: allMessages, loading: false });
-      } catch (error) {
-        console.error('Error loading messages:', error);
-        set({ 
-          error: error instanceof Error ? error.message : 'Failed to load messages',
-          loading: false 
-        });
       }
     },
 
@@ -188,9 +202,10 @@ export const useMessageStore = create<MessageState>((set, get) => {
       contextId?: string,
       isSystemMessage?: boolean,
       skipAiResponse?: boolean,
-      forceSearch?: boolean
+      forceSearch?: boolean,
+      metadata?: { personalization_enabled?: boolean; search_enabled?: boolean; tools_used?: string[] }
     ) => {
-      set({ loading: true, error: null });
+      set({ error: null });
       const messageId = crypto.randomUUID();
       const abortController = new AbortController();
       
@@ -206,10 +221,19 @@ export const useMessageStore = create<MessageState>((set, get) => {
           threadId = thread.id;
         }
 
-        // Add to message queue
+        if (metadata) {
+          await supabase
+            .from('threads')
+            .update({
+              personalization_enabled: metadata.personalization_enabled,
+              search_enabled: metadata.search_enabled,
+              tools_used: metadata.tools_used
+            })
+            .eq('id', threadId);
+        }
+
         get().messageQueue.set(messageId, abortController);
 
-        // Send user message
         const userMessage = {
           id: messageId,
           content,
@@ -229,7 +253,6 @@ export const useMessageStore = create<MessageState>((set, get) => {
         if (msgError) throw msgError;
         if (!msgData) throw new Error('Failed to send message');
 
-        // Update local state with user message
         set(state => ({
           messages: [...state.messages, msgData as Message]
         }));
@@ -240,44 +263,71 @@ export const useMessageStore = create<MessageState>((set, get) => {
           return;
         }
 
-        // Set up timeout
+        if (integrationChat.isIntegrationCommand(content)) {
+          const integrationMessage = await handleIntegrationCommand(
+            content,
+            threadId,
+            user.id
+          );
+
+          if (integrationMessage) {
+            const { data: intData, error: intError } = await supabase
+              .from('messages')
+              .insert(integrationMessage)
+              .select()
+              .single();
+
+            if (intError) throw intError;
+            if (!intData) throw new Error('Failed to save integration response');
+
+            set(state => ({
+              messages: [...state.messages, intData as Message],
+              loading: false
+            }));
+
+            cleanupMessage(messageId);
+            return;
+          }
+        }
+
         const timeoutId = setTimeout(() => {
           abortController.abort();
           handleMessageError(messageId, new Error('Message timed out'));
         }, MESSAGE_TIMEOUT);
 
-        // Get AI response
         const model = getChatModel();
         const { isActive, personalInfo } = usePersonalizationStore.getState();
         
-        const chat = isActive ? model.startChatWithContext({
-          name: personalInfo.name,
-          personalDocument: personalInfo.personalization_document,
-          backstory: personalInfo.backstory,
-          interests: personalInfo.interests,
-          expertise_areas: personalInfo.expertise_areas,
-          preferences: {
-            communication: {
-              tone: personalInfo.communication_preferences?.tone,
-              style: personalInfo.communication_style
-            },
-            learning: {
-              style: personalInfo.learning_style
-            },
-            work: {
-              style: personalInfo.work_style
+        const systemMessage = isSystemMessage ? PERSONALIZATION_SYSTEM_MESSAGE : ULTRA_SYSTEM_MESSAGE;
+        const chat = model.startChat(systemMessage);
+        if (isActive && !isSystemMessage) {
+          chat.setPersonalizationContext({
+            name: personalInfo.name,
+            personalDocument: personalInfo.personalization_document,
+            backstory: personalInfo.backstory,
+            interests: personalInfo.interests,
+            expertise_areas: personalInfo.expertise_areas,
+            preferences: {
+              communication: {
+                tone: personalInfo.communication_preferences?.tone,
+                style: personalInfo.communication_style
+              },
+              learning: {
+                style: personalInfo.learning_style
+              },
+              work: {
+                style: personalInfo.work_style
+              }
             }
-          }
-        }) : model.startChat();
+          });
+        }
 
-        // Generate AI message ID
         const aiMessageId = crypto.randomUUID();
+        set({ loading: true });
 
-        // Check if search is needed
         const { content: enhancedContent, wasSearchPerformed } = await handleSearch(content, forceSearch);
         const messageToSend = wasSearchPerformed ? enhancedContent : content;
 
-        // Stream handler with abort check
         const streamHandler = (text: string) => {
           if (abortController.signal.aborted) return;
           
@@ -292,8 +342,13 @@ export const useMessageStore = create<MessageState>((set, get) => {
           }
         };
 
+        const previousMessages = get().messages;
+        for (const msg of previousMessages) {
+          await chat.sendMessage(msg.content, false, { signal: abortController.signal });
+        }
+
         const result = await chat.sendMessage(
-          messageToSend, 
+          messageToSend,
           wasSearchPerformed,
           { 
             onStreamResponse: streamHandler,
@@ -315,7 +370,6 @@ export const useMessageStore = create<MessageState>((set, get) => {
 
         if (!response) throw new Error('No response received from AI');
 
-        // Send AI response
         const aiMessage = {
           id: aiMessageId,
           content: response,
@@ -335,15 +389,15 @@ export const useMessageStore = create<MessageState>((set, get) => {
         if (aiError) throw aiError;
         if (!aiData) throw new Error('Failed to save AI response');
 
-        // Update messages with AI response
         set(state => ({
           messages: [...state.messages, aiData as Message],
           loading: false,
         }));
 
-        // Update thread title if first message
         if (get().messages.length === 2) {
-          const title = content.slice(0, 50);
+          const title = await getChatModel().generateText(
+            `Generate a concise title (max 50 chars) that summarizes this conversation based on: "${content}"\nFormat: Just return the title, nothing else.`
+          );
           await supabase
             .from('threads')
             .update({ title })
@@ -384,11 +438,56 @@ export const useMessageStore = create<MessageState>((set, get) => {
         const threadId = messages[messageIndex].thread_id;
         if (!threadId) throw new Error('Thread ID not found');
 
-        // Set up timeout
         const timeoutId = setTimeout(() => {
           abortController.abort();
           handleMessageError(messageId, new Error('Regeneration timed out'));
         }, MESSAGE_TIMEOUT);
+
+        if (integrationChat.isIntegrationCommand(userMessage.content)) {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (!user) throw new Error('User not authenticated');
+
+          const integrationMessage = await handleIntegrationCommand(
+            userMessage.content,
+            threadId,
+            user.id
+          );
+
+          if (integrationMessage) {
+            await supabase.from('message_versions').insert({
+              message_id: messageId,
+              content: messages[messageIndex].content,
+              version_number: messages[messageIndex].version_count || 1,
+              created_by: 'system'
+            });
+
+            const { error: updateError } = await supabase
+              .from('messages')
+              .update({ 
+                content: integrationMessage.content,
+                integrations: integrationMessage.integrations,
+                version_count: (messages[messageIndex].version_count || 1) + 1
+              })
+              .eq('id', messageId);
+
+            if (updateError) throw updateError;
+
+            set(state => ({
+              messages: state.messages.map(m => 
+                m.id === messageId ? { 
+                  ...m, 
+                  content: integrationMessage.content,
+                  integrations: integrationMessage.integrations,
+                  version_count: (m.version_count || 1) + 1
+                } : m
+              ),
+              loading: false
+            }));
+
+            cleanupMessage(messageId);
+            return;
+          }
+        }
 
         const model = getChatModel();
         const { isActive, personalInfo } = usePersonalizationStore.getState();
@@ -426,7 +525,6 @@ export const useMessageStore = create<MessageState>((set, get) => {
           .replace(/\n{3,}/g, '\n\n')
           .trim();
 
-        // Save current version
         await supabase.from('message_versions').insert({
           message_id: messageId,
           content: messages[messageIndex].content,
@@ -434,7 +532,6 @@ export const useMessageStore = create<MessageState>((set, get) => {
           created_by: 'system'
         });
 
-        // Update the message
         const { error: updateError } = await supabase
           .from('messages')
           .update({ 
@@ -445,7 +542,6 @@ export const useMessageStore = create<MessageState>((set, get) => {
 
         if (updateError) throw updateError;
 
-        // Update local state
         set(state => ({
           messages: state.messages.map(m => 
             m.id === messageId ? { 
@@ -492,7 +588,6 @@ export const useMessageStore = create<MessageState>((set, get) => {
 
       state.pendingUpdates.add(messageId);
       try {
-        // Get the version content
         const { data: versionData, error: versionError } = await supabase
           .from('message_versions')
           .select('content')
@@ -503,18 +598,25 @@ export const useMessageStore = create<MessageState>((set, get) => {
         if (versionError) throw versionError;
         if (!versionData) throw new Error('Version not found');
 
-        // Update the message
         const { error: updateError } = await supabase
           .from('messages')
-          .update({ content: versionData.content })
+          .update({ 
+            content: versionData.content,
+            version_count: versionNumber,
+            updated_at: new Date().toISOString()
+          })
           .eq('id', messageId);
 
         if (updateError) throw updateError;
 
-        // Update local state
         set(state => ({
           messages: state.messages.map(m =>
-            m.id === messageId ? { ...m, content: versionData.content } : m
+            m.id === messageId ? { 
+              ...m, 
+              content: versionData.content,
+              version_count: versionNumber,
+              updated_at: new Date().toISOString()
+            } : m
           )
         }));
       } catch (error) {

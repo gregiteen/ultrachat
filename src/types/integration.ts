@@ -1,3 +1,57 @@
+export interface IntegrationLogo {
+  url: string;
+  alt: string;
+  width: number;
+  height: number;
+}
+
+export interface IntegrationMetadata {
+  name: string;
+  description: string;
+  category: string;
+  logo: IntegrationLogo;
+  capabilities: string[];
+  authType: 'oauth' | 'apiKey' | 'none';
+  apiKeyUrl?: string;
+  apiKeyPlaceholder?: string;
+  apiKeyInstructions?: string;
+  docsUrl?: string;
+}
+
+export type IntegrationType = 
+  | 'gmail' 
+  | 'google_calendar' 
+  | 'outlook' 
+  | 'slack' 
+  | 'github' 
+  | 'custom'
+  | string;
+
+export interface Integration {
+  id: string;
+  user_id: string;
+  type: 'gmail' | 'google_calendar' | 'outlook' | 'slack' | 'github' | 'custom';
+  status: 'connected' | 'disconnected' | 'error';
+  settings?: {
+    name?: string;
+    endpoint?: string;
+    api_key?: string;
+  };
+  credentials?: {
+    access_token: string;
+    refresh_token: string;
+    token_type: string;
+    expires_at: number;
+  };
+  last_synced?: string;
+  metadata?: {
+    name: string;
+    description: string;
+    capabilities: string[];
+    metadata: IntegrationMetadata;
+  };
+}
+
 export interface LocationContext {
   coordinates: {
     latitude: number;

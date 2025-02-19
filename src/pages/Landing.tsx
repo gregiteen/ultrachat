@@ -48,26 +48,12 @@ export default function Landing() {
       <div className="fixed top-0 left-0 right-0 z-50 bg-background/80 backdrop-blur-sm border-b border-muted">
         <div className="mx-auto max-w-7xl px-6 py-4 flex justify-between items-center">
           <Link to="/">
-            <img src="https://imgur.com/EJ0T2co.png" alt="UltraChat" className="h-8 w-auto" />
           </Link>
-          
           {/* Navigation Items */}
           {user ? (
             <Link to="/chat" className="text-sm font-medium text-foreground hover:text-primary transition-colors">Go to Chat</Link>
           ) : (
             <div className="flex items-center gap-4">
-              <Link
-                to="#features"
-                className="text-sm font-medium text-foreground hover:text-primary transition-colors"
-              >
-                Features
-              </Link>
-              <Link
-                to="#pricing"
-                className="text-sm font-medium text-foreground hover:text-primary transition-colors"
-              >
-                Pricing
-              </Link>
               <button
                 ref={authButtonRef}
                 onClick={() => setShowAuthDialog(true)}
@@ -88,7 +74,7 @@ export default function Landing() {
         <div className="mx-auto max-w-7xl px-6 pb-24 pt-10 sm:pb-32 lg:flex lg:px-8 lg:py-40">
           <div className="mx-auto max-w-2xl flex-shrink-0 lg:mx-0 lg:max-w-xl lg:pt-8">
             <div className="flex justify-center lg:justify-start">
-              <img src="https://imgur.com/EJ0T2co.png" alt="UltraChat" className="h-24 w-auto mb-8" />
+              <img src="/logo.png" alt="UltraChat" className="h-32 w-auto mb-8" />
             </div>
             <div className="mt-24 sm:mt-32 lg:mt-16">
               <a href="#" className="inline-flex space-x-6">
@@ -131,7 +117,7 @@ export default function Landing() {
           <div className="mx-auto mt-16 flex max-w-2xl sm:mt-24 lg:ml-10 lg:mr-0 lg:mt-0 lg:max-w-none xl:ml-32">
             <div className="max-w-3xl flex-none sm:max-w-5xl lg:max-w-none">
               <img
-                src="https://images.unsplash.com/photo-1498050108023-c5249f4df085?ixlib=rb-4.0.3&ixid=MnwxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8&auto=format&fit=crop&w=2072&q=80"
+                src="https://images.unsplash.com/photo-1517694712202-14dd9538aa97?q=80&w=2940&auto=format&fit=crop"
                 alt="App screenshot"
                 width={2432}
                 height={1442}
